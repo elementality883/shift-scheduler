@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phone Shift Scheduler</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap');
+:root{
+  --bg:#0d0f14;--surface:#161a23;--surface2:#1c2130;--border:#252b38;
+  --accent:#00e5a0;--warn:#ff6b35;--pto:#c084fc;--late:#fbbf24;
+  --text:#e8eaf0;--muted:#6b7280;--blue:#0078d4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{min-height:100%;background:var(--bg);}
+body{color:var(--text);font-family:'DM Mono',monospace;padding:24px 16px 60px;}
+
+/* SETUP */
+.setup{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;gap:16px;padding:16px;}
+.setup h2{font-family:'Syne',sans-serif;font-weight:800;font-size:1.6rem;text-align:center;}
+.setup h2 em{color:var(--accent);font-style:normal;}
+.setup-sub{color:var(--muted);font-size:0.77rem;text-align:center;max-width:400px;line-height:1.6;}
+.setup-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px 26px;max-width:500px;width:100%;}
+.setup-card h3{font-family:'Syne',sans-serif;font-weight:700;font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+.steps{display:flex;flex-direction:column;gap:12px;margin-bottom:18px;}
+.step{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;}
+.sn{width:22px;height:22px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:0.66rem;color:var(--accent);flex-shrink:0;margin-top:2px;}
+.sb{font-size:0.75rem;color:var(--muted);line-height:1.6;}
+.sb strong{color:var(--text);}
+.sb a{color:var(--accent);}
+.sb code{color:var(--accent);background:rgba(0,229,160,0.08);padding:1px 4px;border-radius:3px;font-size:0.69rem;}
+.field-lbl{font-size:0.66rem;color:var(--muted);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:4px;margin-top:10px;}
+.setup-inp{width:100%;background:#1e2330;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.79rem;outline:none;transition:border-color 0.2s;}
+.setup-inp:focus{border-color:var(--accent);}
+.setup-inp::placeholder{color:var(--muted);}
+.setup-err{color:var(--warn);font-size:0.73rem;margin-top:6px;display:none;}
+.hr{height:1px;background:var(--border);margin:14px 0;}
+.hint{font-size:0.68rem;color:var(--muted);line-height:1.55;}
+.hint a{color:var(--accent);}
+
+/* HEADER */
+.hdr{text-align:center;margin-bottom:20px;}
+.hdr h1{font-family:'Syne',sans-serif;font-weight:800;font-size:1.75rem;letter-spacing:-0.02em;}
+.hdr h1 em{color:var(--accent);font-style:normal;}
+.hdr p{color:var(--muted);font-size:0.71rem;margin-top:4px;letter-spacing:0.07em;text-transform:uppercase;}
+.srow{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:7px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;border:1px solid;font-size:0.65rem;transition:all 0.2s;}
+.pi{color:var(--muted);border-color:var(--border);}
+.ps{color:var(--late);border-color:rgba(251,191,36,0.3);background:rgba(251,191,36,0.05);}
+.po{color:var(--accent);border-color:rgba(0,229,160,0.3);background:rgba(0,229,160,0.05);}
+.pe{color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.05);}
+.pdot{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.rcfg{background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;color:var(--muted);font-family:'DM Mono',monospace;font-size:0.65rem;cursor:pointer;}
+.rcfg:hover{border-color:var(--accent);color:var(--accent);}
+
+/* TABS */
+.tabs{display:flex;gap:4px;max-width:780px;margin:0 auto 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;}
+.tab{flex:1;background:none;border:none;border-radius:7px;padding:8px 5px;font-family:'Syne',sans-serif;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);cursor:pointer;transition:all 0.18s;}
+.tab.active{background:var(--surface2);color:var(--accent);border:1px solid var(--border);}
+.tab-panel{display:none;}.tab-panel.active{display:block;}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px;max-width:780px;margin-left:auto;margin-right:auto;}
+.ct{font-family:'Syne',sans-serif;font-weight:700;font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:11px;}
+
+/* INPUTS */
+.add-row{display:flex;gap:8px;}
+input[type=text],input[type=date],select{background:#1e2330;border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.79rem;outline:none;transition:border-color 0.2s;width:100%;}
+input[type=text]:focus,input[type=date]:focus,select:focus{border-color:var(--accent);}
+input::placeholder{color:var(--muted);}
+select option{background:#1e2330;}
+
+/* BUTTONS */
+.btn{background:var(--accent);color:#0d0f14;border:none;border-radius:8px;padding:8px 16px;font-family:'Syne',sans-serif;font-weight:700;font-size:0.75rem;letter-spacing:0.04em;cursor:pointer;white-space:nowrap;transition:opacity 0.15s,transform 0.1s;}
+.btn:hover{opacity:0.85;transform:translateY(-1px);}
+.btn:active{transform:translateY(0);}
+.btn-sec{background:var(--border);color:var(--text);}
+.btn-blue{background:var(--blue);color:#fff;}
+.btn-big{width:100%;padding:13px;font-size:0.85rem;border-radius:10px;}
+
+/* TAGS */
+.tag-grid{display:flex;flex-wrap:wrap;gap:6px;min-height:28px;margin-bottom:11px;}
+.tag{display:inline-flex;align-items:center;gap:5px;background:#1e2330;border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:0.76rem;animation:popIn 0.15s ease;}
+@keyframes popIn{from{transform:scale(0.85);opacity:0;}to{transform:scale(1);opacity:1;}}
+.tag .rm{background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.8rem;padding:0;transition:color 0.15s;}
+.tag .rm:hover{color:var(--warn);}
+
+/* AVAIL TABLE */
+.avail-wrap{overflow-x:auto;}
+.avail-table{width:100%;border-collapse:collapse;font-size:0.73rem;min-width:500px;}
+.avail-table th{font-family:'Syne',sans-serif;font-weight:700;font-size:0.59rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);padding:6px 4px;text-align:center;border-bottom:1px solid var(--border);}
+.avail-table th.nc{text-align:left;min-width:86px;}
+.avail-table td{padding:4px 3px;text-align:center;border-bottom:1px solid rgba(37,43,56,0.4);}
+.avail-table td.nc{text-align:left;font-size:0.75rem;padding-left:3px;white-space:nowrap;}
+.asel{width:90px;padding:3px 4px;font-size:0.64rem;border-radius:5px;text-align:center;background:#1e2330;border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;outline:none;}
+.sa{border-color:rgba(0,229,160,0.4)!important;color:var(--accent)!important;}
+.spto{border-color:rgba(192,132,252,0.5)!important;color:var(--pto)!important;background:rgba(192,132,252,0.07)!important;}
+.slate{border-color:rgba(251,191,36,0.5)!important;color:var(--late)!important;background:rgba(251,191,36,0.07)!important;}
+.sexclude{border-color:rgba(255,107,53,0.5)!important;color:var(--warn)!important;background:rgba(255,107,53,0.07)!important;}
+.wk-nav{display:flex;align-items:center;gap:9px;margin-bottom:11px;}
+.wk-nav span{flex:1;font-size:0.79rem;text-align:center;}
+.wk-nav button{background:var(--border);border:none;border-radius:6px;padding:5px 10px;color:var(--text);cursor:pointer;font-family:'DM Mono',monospace;font-size:0.76rem;}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:11px;}
+.leg{display:flex;align-items:center;gap:4px;font-size:0.69rem;color:var(--muted);}
+.ldot{width:7px;height:7px;border-radius:50%;}
+
+/* SCHEDULE */
+.sg{display:grid;gap:6px;}
+.slotrow{display:grid;grid-template-columns:122px 1fr;border-radius:8px;overflow:hidden;border:1px solid var(--border);animation:sli 0.2s ease both;}
+@keyframes sli{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:translateX(0);}}
+.stime{background:#1c2130;padding:9px 12px;font-size:0.75rem;color:var(--muted);display:flex;align-items:center;border-right:1px solid var(--border);white-space:nowrap;}
+.speople{padding:7px 11px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;background:var(--surface2);}
+.badge{border-radius:5px;padding:2px 8px;font-size:0.73rem;}
+.bn{background:rgba(0,229,160,0.1);color:var(--accent);border:1px solid rgba(0,229,160,0.2);}
+.bl{background:rgba(251,191,36,0.1);color:var(--late);border:1px solid rgba(251,191,36,0.25);}
+.ltag{font-family:'Syne',sans-serif;font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:4px;padding:2px 6px;margin-left:auto;}
+.sched-hd{font-family:'Syne',sans-serif;font-weight:800;font-size:1.08rem;margin-bottom:11px;max-width:780px;margin-left:auto;margin-right:auto;}
+.msgbox{background:#0a0c11;border:1px solid var(--border);border-radius:10px;padding:14px 14px 10px;font-size:0.76rem;line-height:1.75;color:#c8cdd8;white-space:pre-wrap;font-family:'DM Mono',monospace;position:relative;}
+.cpbtn{position:absolute;top:8px;right:8px;background:var(--border);border:none;border-radius:6px;padding:4px 8px;font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted);cursor:pointer;transition:all 0.15s;}
+.cpbtn:hover,.cpbtn.ok{background:var(--accent);color:#0d0f14;}
+
+/* AUTO-SEND */
+.fl{font-size:0.66rem;color:var(--muted);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:4px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.tbox{border-radius:8px;padding:10px 13px;font-size:0.73rem;margin-top:9px;border:1px solid;}
+.ton{background:rgba(0,229,160,0.06);border-color:rgba(0,229,160,0.2);color:var(--accent);}
+.toff{background:rgba(107,114,128,0.06);border-color:var(--border);color:var(--muted);}
+.nfire{font-size:0.65rem;color:var(--muted);margin-top:3px;}
+
+/* MISC */
+.note{color:var(--muted);font-size:0.69rem;margin-top:8px;line-height:1.55;}
+.note strong{color:var(--text);}
+.errtxt{color:var(--warn);font-size:0.73rem;margin-top:6px;display:none;}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0d0f14;font-family:'Syne',sans-serif;font-weight:700;font-size:0.76rem;padding:8px 17px;border-radius:8px;opacity:0;pointer-events:none;transition:opacity 0.2s;z-index:999;white-space:nowrap;}
+.toast.show{opacity:1;}
+.ov{position:fixed;inset:0;background:rgba(13,15,20,0.88);display:flex;align-items:center;justify-content:center;z-index:200;}
+.ov.hidden{display:none;}
+.spin{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:rot 0.7s linear infinite;}
+@keyframes rot{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="ov hidden" id="ov"><div class="spin"></div></div>
+
+<!-- ═══════════════════ SETUP SCREEN ═══════════════════ -->
+<!-- Visible by default — hidden by JS once credentials saved -->
+<div class="setup" id="setupWrap">
+
+  <h2>📞 Shift <em>Scheduler</em></h2>
+  <p class="setup-sub">One-time setup — takes about 3 minutes.</p>
+
+  <div class="setup-card">
+    <h3>🗄 Connect to JSONBin (free shared storage)</h3>
+    <div class="steps">
+
+      <div class="step">
+        <div class="sn">1</div>
+        <div class="sb">
+          Go to <a href="https://jsonbin.io" target="_blank"><strong>jsonbin.io</strong></a>
+          and <strong>Sign Up</strong> for a free account (no credit card).
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">2</div>
+        <div class="sb">
+          In the left sidebar click <strong>API Keys → Create Access Key</strong>.
+          Name it <code>ShiftScheduler</code> and copy the key.
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">3</div>
+        <div class="sb">
+          Click <strong>Bins → Create Bin</strong>. Paste this as the content:<br>
+          <code style="display:block;margin-top:5px">{"team":[],"avail":{}}</code>
+          Name it <code>ShiftScheduler</code> and click <strong>Create</strong>.
+          Copy the <strong>Bin ID</strong> from the URL.
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="sn">4</div>
+        <div class="sb">
+          Paste both values below and click <strong>Connect</strong>.
+          Share the same API Key + Bin ID with your team — they only need to do this once.
+        </div>
+      </div>
+
+    </div>
+
+    <div class="field-lbl">API Key</div>
+    <input class="setup-inp" type="text" id="inpKey" placeholder="$2b$10$…">
+
+    <div class="field-lbl">Bin ID</div>
+    <input class="setup-inp" type="text" id="inpBin" placeholder="64a3f…" style="margin-top:4px">
+
+    <div class="errtxt" id="setupErr"></div>
+
+    <button class="btn btn-blue btn-big" id="btnConnect" style="margin-top:14px">Connect →</button>
+
+    <div class="hr"></div>
+    <p class="hint">
+      JSONBin is a free REST storage service at <a href="https://jsonbin.io" target="_blank">jsonbin.io</a>.
+      Your team data is stored there. The API key and Bin ID are saved in your browser
+      so you only enter them once per device.
+    </p>
+  </div>
+
+  <button class="btn btn-sec" id="btnLocalOnly" style="font-size:0.7rem">
+    Use locally only (no shared storage)
+  </button>
+
+</div>
+
+<!-- ═══════════════════ MAIN APP ═══════════════════ -->
+<div id="appWrap" style="display:none">
+
+  <div class="hdr">
+    <h1>📞 Shift <em>Scheduler</em></h1>
+    <p>Daily phone coverage · JSONBin synced · WebEx auto-send</p>
+    <div class="srow">
+      <div class="pill pi" id="syncPill"><div class="pdot"></div><span id="syncLbl">Ready</span></div>
+      <button class="rcfg" id="btnRecfg">⚙ Storage</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabBar">
+    <button class="tab active" data-tab="team">👥 Team</button>
+    <button class="tab" data-tab="avail">📅 Availability</button>
+    <button class="tab" data-tab="sched">⚡ Schedule</button>
+    <button class="tab" data-tab="autosend">🚀 Auto-Send</button>
+  </div>
+
+  <!-- TEAM -->
+  <div class="tab-panel active" id="tab-team">
+    <div class="card">
+      <div class="ct">Team Members</div>
+      <div class="tag-grid" id="teamGrid"></div>
+      <div class="add-row">
+        <input type="text" id="nameIn" placeholder="Enter name and press Enter or click Add…">
+        <button class="btn" id="btnAdd">Add</button>
+      </div>
+      <p class="errtxt" id="teamErr"></p>
+      <p class="note">Changes save automatically and sync to everyone who has the same Bin ID.</p>
+    </div>
+  </div>
+
+  <!-- AVAILABILITY -->
+  <div class="tab-panel" id="tab-avail">
+    <div class="card">
+      <div class="ct">Weekly Availability &amp; Late Shifts</div>
+      <div class="wk-nav">
+        <button id="btnWkPrev">← Prev</button>
+        <span id="wkLbl"></span>
+        <button id="btnWkNext">Next →</button>
+      </div>
+      <div class="legend">
+        <div class="leg"><div class="ldot" style="background:var(--accent)"></div>Available</div>
+        <div class="leg"><div class="ldot" style="background:var(--late)"></div>Late Shift</div>
+        <div class="leg"><div class="ldot" style="background:var(--pto)"></div>PTO / Absent</div>
+        <div class="leg"><div class="ldot" style="background:var(--warn)"></div>Exclude</div>
+      </div>
+      <div class="avail-wrap">
+        <table class="avail-table"><thead id="avHead"></thead><tbody id="avBody"></tbody></table>
+      </div>
+      <p class="note"><strong>Late Shift</strong> = covers 12:00–13:00 &amp; 14:00–15:00 only — not randomised into other slots. <strong>PTO / Exclude</strong> = removed from all assignments that day.</p>
+    </div>
+  </div>
+
+  <!-- SCHEDULE -->
+  <div class="tab-panel" id="tab-sched">
+    <div class="card">
+      <div class="ct">Generate Day Schedule</div>
+      <div style="margin-bottom:11px">
+        <div class="fl">Date</div>
+        <input type="date" id="schedDate">
+      </div>
+      <button class="btn btn-big" id="btnGenerate">⚡ Generate Schedule</button>
+      <p class="errtxt" id="schedErr"></p>
+    </div>
+    <div id="schedOut" style="display:none">
+      <div class="sched-hd" id="schedHd"></div>
+      <div class="card" style="padding:13px"><div class="sg" id="schedGrid"></div></div>
+      <div class="card" style="padding:13px">
+        <div class="ct">WebEx Message</div>
+        <div class="msgbox"><button class="cpbtn" id="cpBtn">Copy</button><span id="msgTxt"></span></div>
+      </div>
+      <div style="max-width:780px;margin:0 auto">
+        <button class="btn btn-sec btn-big" id="btnRerand">🔀 Re-randomise</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTO-SEND -->
+  <div class="tab-panel" id="tab-autosend">
+    <div class="card">
+      <div class="ct">Browser Auto-Send</div>
+      <div style="display:grid;gap:10px">
+        <div><div class="fl">WebEx Bot Token</div>
+          <input type="text" id="wxTok" placeholder="Bearer token from developer.webex.com"></div>
+        <div><div class="fl">WebEx Room / Space ID</div>
+          <input type="text" id="wxRoom" placeholder="Room ID"></div>
+        <div class="two-col">
+          <div><div class="fl">Morning Send</div><input type="text" id="wxT1" value="08:45"></div>
+          <div><div class="fl">Evening Send</div><input type="text" id="wxT2" value="17:00"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
+        <button class="btn" id="btnASStart">▶ Activate</button>
+        <button class="btn btn-sec" id="btnASStop">⏹ Stop</button>
+        <button class="btn btn-sec" style="margin-left:auto" id="btnASTest">📤 Test Now</button>
+      </div>
+      <div class="tbox toff" id="asStatus">Auto-send is <strong>inactive</strong>.</div>
+      <div class="nfire" id="nFire"></div>
+      <p class="note">Tab must stay open for browser auto-send to work.</p>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+const JB   = 'https://api.jsonbin.io/v3';
+const LSK  = 'sched_jb_key';
+const LSB  = 'sched_jb_bin';
+const LSD  = 'sched_local';
+
+let team=[], avail={}, jbKey=null, jbBin=null, localOnly=false;
+let saveTimer=null, wkStart=getMonday(new Date()), asInterval=null, sentKeys={};
+
+// lateOnly:true  = ONLY the designated late-shift person is assigned here
+// lateOnly:false = normal random pool; late-shift person is EXCLUDED from these slots
+const SLOTS=[
+  {time:'09:00 – 10:00',lateOnly:false},
+  {time:'10:00 – 11:00',lateOnly:false},
+  {time:'11:00 – 12:00',lateOnly:false},
+  {time:'12:00 – 13:00',lateOnly:true },
+  {time:'13:00 – 14:00',lateOnly:false},
+  {time:'14:00 – 15:00',lateOnly:true },
+  {time:'16:00 – 17:00',lateOnly:false},
+];
+
+// ═══════════════════════════════════════════════════════
+// SAFE STORAGE  (localStorage may be blocked in iframes)
+// ═══════════════════════════════════════════════════════
+const LS={
+  get(k){try{return localStorage.getItem(k);}catch{return null;}},
+  set(k,v){try{localStorage.setItem(k,v);}catch{}},
+};
+
+// ═══════════════════════════════════════════════════════
+// JSONBIN API
+// ═══════════════════════════════════════════════════════
+async function jbRead(){
+  const r=await fetch(`${JB}/b/${jbBin}/latest`,{
+    headers:{'X-Master-Key':jbKey,'X-Bin-Meta':'false'}
+  });
+  if(!r.ok) throw new Error(`JSONBin read HTTP ${r.status} — check your API Key and Bin ID`);
+  return r.json();
+}
+
+async function jbWrite(payload){
+  const r=await fetch(`${JB}/b/${jbBin}`,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json','X-Master-Key':jbKey},
+    body:JSON.stringify(payload)
+  });
+  if(!r.ok) throw new Error(`JSONBin write HTTP ${r.status}`);
+}
+
+// ═══════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════
+function boot(){
+  wireEvents();
+  jbKey=LS.get(LSK);
+  jbBin=LS.get(LSB);
+  if(jbKey && jbBin){
+    loadAndLaunch();
+  }
+  // else setup screen is already visible
+}
+
+async function loadAndLaunch(){
+  showOv();
+  try{
+    const d=await jbRead();
+    team=d.team||[]; avail=d.avail||{}; localOnly=false;
+  }catch(e){
+    // Fall back to local cache
+    const c=LS.get(LSD);
+    if(c){try{const d=JSON.parse(c);team=d.team||[];avail=d.avail||{};}catch{}}
+    toast('⚠ JSONBin unreachable — using cached data');
+  }
+  hideOv();
+  showApp();
+}
+
+function showApp(){
+  document.getElementById('setupWrap').style.display='none';
+  document.getElementById('appWrap').style.display='block';
+  document.getElementById('schedDate').value=fmtD(new Date());
+  updWkLbl(); renderTeam(); renderAvail();
+  setSyncState(localOnly?'local':'idle');
+  // Auto-generate today's schedule immediately on load
+  generate();
+}
+
+function showSetup(){
+  document.getElementById('appWrap').style.display='none';
+  document.getElementById('setupWrap').style.display='flex';
+  if(jbKey) document.getElementById('inpKey').value=jbKey;
+  if(jbBin) document.getElementById('inpBin').value=jbBin;
+}
+
+// ═══════════════════════════════════════════════════════
+// CONNECT
+// ═══════════════════════════════════════════════════════
+async function connect(){
+  const key=document.getElementById('inpKey').value.trim();
+  const bin=document.getElementById('inpBin').value.trim();
+  const err=document.getElementById('setupErr');
+  err.style.display='none';
+
+  if(!key||!bin){
+    err.textContent='Please fill in both fields.';
+    err.style.display='block';
+    return;
+  }
+
+  jbKey=key; jbBin=bin;
+  showOv();
+  try{
+    const d=await jbRead();
+    team=d.team||[]; avail=d.avail||{};
+    LS.set(LSK,jbKey); LS.set(LSB,jbBin);
+    localOnly=false;
+    hideOv();
+    showApp();
+  }catch(e){
+    hideOv();
+    jbKey=null; jbBin=null;
+    err.textContent='Could not connect: '+e.message;
+    err.style.display='block';
+  }
+}
+
+function useLocal(){
+  localOnly=true; jbKey=null; jbBin=null;
+  const c=LS.get(LSD);
+  if(c){try{const d=JSON.parse(c);team=d.team||[];avail=d.avail||{};}catch{}}
+  showApp();
+}
+
+// ═══════════════════════════════════════════════════════
+// SAVE
+// ═══════════════════════════════════════════════════════
+let lastChangedDate = null; // tracks which date triggered the save
+
+function scheduleSave(changedDate){
+  if(changedDate) lastChangedDate = changedDate;
+  setSyncState('saving');
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(doSave,700);
+}
+
+async function doSave(){
+  const p={team,avail};
+  LS.set(LSD,JSON.stringify(p));
+  if(localOnly||!jbKey||!jbBin){setSyncState('local');return;}
+  try{
+    await jbWrite(p);
+    setSyncState('ok');
+    // After a successful save, check if the changed date needs an auto-send update
+    if(lastChangedDate){
+      checkAvailabilityTrigger(lastChangedDate);
+      lastChangedDate=null;
+    }
+  }
+  catch(e){setSyncState('err');toast('⚠ Save failed: '+e.message);}
+}
+
+function setSyncState(s){
+  const pill=document.getElementById('syncPill'),lbl=document.getElementById('syncLbl');
+  pill.className='pill';
+  const m={idle:['pi','● JSONBin'],saving:['ps','↑ Saving…'],ok:['po','✓ Saved'],err:['pe','⚠ Error'],local:['pi','○ Local only']};
+  const[c,t]=m[s]||m.idle; pill.classList.add(c); lbl.textContent=t;
+}
+
+// ═══════════════════════════════════════════════════════
+// WIRE EVENTS  (zero inline handlers — CSP safe)
+// ═══════════════════════════════════════════════════════
+function wireEvents(){
+  // Setup
+  on('btnConnect',   'click', connect);
+  on('btnLocalOnly', 'click', useLocal);
+  on('inpKey',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpBin').focus(); });
+  on('inpBin',       'keydown', e=>{ if(e.key==='Enter') connect(); });
+  // App header
+  on('btnRecfg',     'click', showSetup);
+  // Tabs — delegate
+  on('tabBar',       'click', e=>{ const b=e.target.closest('[data-tab]'); if(b) sw(b.dataset.tab); });
+  // Team
+  on('btnAdd',       'click', addMember);
+  on('nameIn',       'keydown', e=>{ if(e.key==='Enter') addMember(); });
+  on('teamGrid',     'click', e=>{ const b=e.target.closest('[data-remove]'); if(b) removeMember(b.dataset.remove); });
+  // Avail
+  on('btnWkPrev',    'click', ()=>chWk(-1));
+  on('btnWkNext',    'click', ()=>chWk(1));
+  on('avBody',       'change', e=>{ const s=e.target.closest('select[data-name]'); if(s) setAv(s.dataset.name,s.dataset.date,s); });
+  // Schedule
+  on('btnGenerate',  'click', ()=>generate());
+  on('btnRerand',    'click', ()=>generate());
+  on('cpBtn',        'click', copyMsg);
+  // Auto-send
+  on('btnASStart',   'click', startAS);
+  on('btnASStop',    'click', stopAS);
+  on('btnASTest',    'click', testSend);
+}
+
+function on(id,ev,fn){ const el=document.getElementById(id); if(el) el.addEventListener(ev,fn); }
+
+// ═══════════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════════
+function sw(id){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  const panel=document.getElementById('tab-'+id);
+  if(panel) panel.classList.add('active');
+  if(id==='avail') renderAvail();
+}
+
+// ═══════════════════════════════════════════════════════
+// TEAM
+// ═══════════════════════════════════════════════════════
+function addMember(){
+  const inp=document.getElementById('nameIn'), name=inp.value.trim();
+  if(!name) return;
+  if(team.includes(name)){toast('Already added!');return;}
+  team.push(name); if(!avail[name]) avail[name]={};
+  scheduleSave(); renderTeam(); renderAvail();
+  inp.value=''; inp.focus();
+}
+
+function removeMember(name){
+  team=team.filter(n=>n!==name); delete avail[name];
+  scheduleSave(); renderTeam(); renderAvail();
+}
+
+function renderTeam(){
+  const g=document.getElementById('teamGrid'); if(!g) return;
+  g.innerHTML=team.length
+    ?team.map(n=>`<span class="tag">${n}<button class="rm" data-remove="${n.replace(/"/g,'&quot;')}">✕</button></span>`).join('')
+    :'<span style="color:var(--muted);font-size:0.73rem">No members yet.</span>';
+}
+
+// ═══════════════════════════════════════════════════════
+// AVAILABILITY
+// ═══════════════════════════════════════════════════════
+function getMonday(d){const dt=new Date(d);dt.setHours(0,0,0,0);const day=dt.getDay();dt.setDate(dt.getDate()-day+(day===0?-6:1));return dt;}
+function addDays(d,n){const dt=new Date(d);dt.setDate(dt.getDate()+n);return dt;}
+function fmtD(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function chWk(dir){wkStart=addDays(wkStart,dir*7);updWkLbl();renderAvail();}
+function updWkLbl(){const e=addDays(wkStart,4),fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});document.getElementById('wkLbl').textContent=`${fmt(wkStart)} – ${fmt(e)}`;}
+function getSt(n,dk){return(avail[n]&&avail[n][dk])||'available';}
+
+function renderAvail(){
+  const hd=document.getElementById('avHead'),bd=document.getElementById('avBody');
+  if(!hd||!bd) return;
+  if(!team.length){hd.innerHTML='';bd.innerHTML='<tr><td colspan="6" style="padding:16px;color:var(--muted);font-size:0.74rem">Add team members first.</td></tr>';return;}
+  const days=Array.from({length:5},(_,i)=>addDays(wkStart,i)),keys=days.map(fmtD);
+  hd.innerHTML='<tr><th class="nc">Member</th>'+days.map(d=>`<th>${d.toLocaleDateString('en-GB',{weekday:'short'})}<br><span style="font-weight:400">${d.getDate()}/${d.getMonth()+1}</span></th>`).join('')+'</tr>';
+  bd.innerHTML=team.map(name=>`<tr><td class="nc">${name}</td>`+keys.map(dk=>{
+    const v=getSt(name,dk);
+    const c=v==='pto'?'spto':v==='late'?'slate':v==='exclude'?'sexclude':'sa';
+    return`<td><select class="asel ${c}" data-name="${name.replace(/"/g,'&quot;')}" data-date="${dk}">
+      <option value="available" ${v==='available'?'selected':''}>✅ Available</option>
+      <option value="late"      ${v==='late'     ?'selected':''}>🕐 Late Shift</option>
+      <option value="pto"       ${v==='pto'      ?'selected':''}>🌴 PTO</option>
+      <option value="exclude"   ${v==='exclude'  ?'selected':''}>🚫 Exclude</option>
+    </select></td>`;
+  }).join('')+'</tr>').join('');
+}
+
+function setAv(name,dk,sel){
+  if(!avail[name]) avail[name]={};
+  avail[name][dk]=sel.value;
+  const c=sel.value==='pto'?'spto':sel.value==='late'?'slate':sel.value==='exclude'?'sexclude':'sa';
+  sel.className='asel '+c;
+  scheduleSave(dk); // pass the changed date so auto-send knows what to re-check
+}
+
+// ═══════════════════════════════════════════════════════
+// SCHEDULE
+// ═══════════════════════════════════════════════════════
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function buildSched(dk){
+  // Status groups for this date
+  const lateMembers  = team.filter(n=>getSt(n,dk)==='late');
+  // Available for random slots = not pto, not excluded, not late-shift
+  const randomPool   = team.filter(n=>{ const s=getSt(n,dk); return s==='available'; });
+  // Need at least 2 in the random pool for non-late slots
+  if(randomPool.length<2) return null;
+
+  const randShuf = shuffle(randomPool);
+  const lateShuf = shuffle(lateMembers);
+  let ri=0, li=0;
+
+  return SLOTS.map(s=>{
+    if(s.lateOnly){
+      if(lateMembers.length===0){
+        // No late person assigned — fill with 2 from random pool with a warning
+        const p=[];
+        const seen=new Set();
+        while(p.length<2){
+          const person=randShuf[ri%randShuf.length]; ri++;
+          if(!seen.has(person)||randShuf.length===1){p.push(person);seen.add(person);}
+        }
+        return{...s,assigned:p,hasLate:false,noLate:true};
+      }
+      // Late shift person + 1 random from the available pool
+      const latePerson=lateShuf[li%lateShuf.length]; li++;
+      // Pick a random person who isn't the late shift person
+      let randPerson=randShuf[ri%randShuf.length]; ri++;
+      if(randPerson===latePerson){randPerson=randShuf[ri%randShuf.length]; ri++;}
+      return{...s,assigned:[latePerson,randPerson],hasLate:true,noLate:false};
+    }else{
+      // Normal slot — pick 2 from random pool only (late members never appear here)
+      const p=[];
+      const seen=new Set();
+      while(p.length<2){
+        const person=randShuf[ri%randShuf.length]; ri++;
+        // Avoid immediate duplicate in same slot
+        if(!seen.has(person)||randShuf.length===1){p.push(person);seen.add(person);}
+      }
+      return{...s,assigned:p,hasLate:false,noLate:false};
+    }
+  });
+}
+
+function generate(td){
+  const dk=td||document.getElementById('schedDate')?.value;
+  const err=document.getElementById('schedErr');
+  if(err) err.style.display='none';
+  if(!dk){if(err){err.textContent='Select a date.';err.style.display='block';}return null;}
+  const result=buildSched(dk);
+  if(!result){if(err){err.textContent='Not enough available members — need at least 2 people set to Available (not Late Shift, PTO, or Excluded).';err.style.display='block';}return null;}
+  if(!td) renderSched(result,dk);
+  return{result,dk};
+}
+
+function isLate(n,dk){return getSt(n,dk)==='late';}
+
+function renderSched(result,dk){
+  const obj=new Date(dk+'T00:00:00');
+  const hd=obj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('schedHd').textContent=hd;
+  document.getElementById('schedGrid').innerHTML=result.map((s,i)=>{
+    const badges=s.assigned.map(n=>`<span class="badge ${isLate(n,dk)?'bl':'bn'}">${n}${isLate(n,dk)?' 🕐':''}</span>`).join('');
+    let tag='';
+    if(s.lateOnly && s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
+    if(s.lateOnly && s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
+    return`<div class="slotrow" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
+  }).join('');
+  const msg=buildMsg(result,hd,dk);
+  document.getElementById('msgTxt').textContent=msg;
+  document.getElementById('cpBtn').textContent='Copy';
+  document.getElementById('cpBtn').classList.remove('ok');
+  document.getElementById('schedOut').style.display='block';
+  document.getElementById('schedOut').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// Returns the PTO line for a given date key
+function getPtoLine(dk){
+  const ptoNames=team.filter(n=>getSt(n,dk)==='pto');
+  return ptoNames.length>0
+    ? `🌴 Out on PTO: ${ptoNames.join(', ')}`
+    : `🎉 The Whole Family Is Here!`;
+}
+
+function buildMsg(result,hd,dk){
+  return`📞 Phone Shift Schedule — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?'  *(late shift)*':''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n🕐 Late shift: 12:00–13:00 and 14:00–15:00.\n${getPtoLine(dk)}\nHave a great day! 🙌`;
+}
+
+function buildUpdatedMsg(result,hd,dk){
+  return`🔄 UPDATED — Phone Shift Schedule — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?'  *(late shift)*':''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n🕐 Late shift: 12:00–13:00 and 14:00–15:00.\n${getPtoLine(dk)}\n⚠ This schedule was updated due to an availability change.\nHave a great day! 🙌`;
+}
+
+function copyMsg(){
+  navigator.clipboard.writeText(document.getElementById('msgTxt').textContent).then(()=>{
+    const b=document.getElementById('cpBtn');b.textContent='Copied!';b.classList.add('ok');
+    setTimeout(()=>{b.textContent='Copy';b.classList.remove('ok');},2000);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// AUTO-SEND
+// ═══════════════════════════════════════════════════════
+function startAS(){
+  const tok=document.getElementById('wxTok').value.trim();
+  const room=document.getElementById('wxRoom').value.trim();
+  const t1=document.getElementById('wxT1').value.trim();
+  const t2=document.getElementById('wxT2').value.trim();
+  if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
+  stopAS();
+  asInterval=setInterval(()=>{
+    const now=new Date();
+    const hhmm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const dk=fmtD(now);
+    [t1,t2].forEach(tgt=>{const k=`${dk}_${tgt}`;if(hhmm===tgt&&!sentKeys[k]){sentKeys[k]=true;sendTomorrow(tok,room);}});
+    updNfire([t1,t2]);
+  },10000);
+  document.getElementById('asStatus').className='tbox ton';
+  document.getElementById('asStatus').innerHTML=`Auto-send <strong>active</strong> — fires at <strong>${t1}</strong> &amp; <strong>${t2}</strong>.`;
+  updNfire([t1,t2]); toast('Auto-send activated!');
+}
+
+function stopAS(){
+  if(asInterval) clearInterval(asInterval); asInterval=null;
+  document.getElementById('asStatus').className='tbox toff';
+  document.getElementById('asStatus').innerHTML='Auto-send is <strong>inactive</strong>.';
+  document.getElementById('nFire').textContent='';
+}
+
+function updNfire(times){
+  const now=new Date();let next=null;
+  times.forEach(t=>{const[h,m]=t.split(':').map(Number);const c=new Date(now);c.setHours(h,m,0,0);if(c<=now)c.setDate(c.getDate()+1);if(!next||c<next)next=c;});
+  if(next) document.getElementById('nFire').textContent=`Next send: ${next.toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`;
+}
+
+// Returns the next work day date string (Mon–Fri only).
+// Friday → Monday, Saturday → Monday, Sunday → Monday.
+function getNextWorkDay(){
+  const d=new Date();
+  do{ d.setDate(d.getDate()+1); }while(d.getDay()===0||d.getDay()===6);
+  return fmtD(d);
+}
+
+// Called after every successful save when an availability cell was changed.
+// If auto-send is active and the changed date is today or the next work day,
+// regenerate and post an updated message to WebEx.
+function checkAvailabilityTrigger(changedDate){
+  if(!asInterval) return;
+  const tok=document.getElementById('wxTok').value.trim();
+  const room=document.getElementById('wxRoom').value.trim();
+  if(!tok||!room) return;
+
+  const todayKey=fmtD(new Date());
+  const nextKey=getNextWorkDay();
+
+  if(changedDate===todayKey||changedDate===nextKey){
+    const label=changedDate===todayKey?"today's":"next work day's";
+    toast(`🔄 Availability changed — resending ${label} schedule…`);
+    sendScheduleForDate(tok,room,changedDate,true);
+  }
+}
+
+async function sendTomorrow(tok,room){
+  await sendScheduleForDate(tok,room,getNextWorkDay(),false);
+}
+
+async function sendScheduleForDate(tok,room,dk,isUpdate){
+  const gen=generate(dk);
+  if(!gen){toast("⚠ Can't generate schedule.");return;}
+  const obj=new Date(dk+'T00:00:00');
+  const hd=obj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const msg=isUpdate?buildUpdatedMsg(gen.result,hd,dk):buildMsg(gen.result,hd,dk);
+  try{
+    const r=await fetch('https://webexapis.com/v1/messages',{
+      method:'POST',headers:{'Authorization':`Bearer ${tok}`,'Content-Type':'application/json'},
+      body:JSON.stringify({roomId:room,text:msg})
+    });
+    if(r.ok){
+      toast(isUpdate?'🔄 Updated schedule sent!':'✅ Sent to WebEx!');
+    }else{
+      toast('❌ WebEx error '+r.status);
+    }
+  }catch{toast('❌ Network error.');}
+}
+
+
+
+async function testSend(){
+  const tok=document.getElementById('wxTok').value.trim();
+  const room=document.getElementById('wxRoom').value.trim();
+  if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
+  toast('Sending…'); await sendTomorrow(tok,room);
+}
+
+// ═══════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════
+function showOv(){document.getElementById('ov').classList.remove('hidden');}
+function hideOv(){document.getElementById('ov').classList.add('hidden');}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
+
+// ═══════════════════════════════════════════════════════
+// START — window.onload is reliable across all browsers
+// ═══════════════════════════════════════════════════════
+if(document.readyState==='complete'){boot();}
+else{window.addEventListener('load',boot);}
+</script>
+</body>
+</html>

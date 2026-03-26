@@ -4,12 +4,17 @@
 // for today (morning send) or next work day (evening send), and posts
 // to a WebEx room.
 //
-// Run by GitHub Actions — all config comes from environment variables.
-// Can also be run locally: set env vars then `node send-schedule.js`
+// IMPORTANT: All date calculations use JST (UTC+9) regardless of where
+// GitHub Actions runs. Change TZ_OFFSET_HOURS if your team is elsewhere.
 
 import fetch from 'node-fetch';
 
-// ── Config from environment variables (set as GitHub Secrets) ──────────
+// ── Timezone config ─────────────────────────────────────────────────────
+const TZ_OFFSET_HOURS = 9; // JST = UTC+9. Change this for your timezone.
+//   UK GMT  = 0    UK BST  = 1
+//   US EST  = -5   US PST  = -8
+
+// ── Config from environment variables (set as GitHub Secrets) ───────────
 const WEBEX_TOKEN  = process.env.WEBEX_TOKEN;
 const WEBEX_ROOM   = process.env.WEBEX_ROOM_ID;
 const JB_KEY       = process.env.JSONBIN_KEY;
@@ -26,6 +31,46 @@ if(!WEBEX_TOKEN || !WEBEX_ROOM || !JB_KEY || !JB_BIN){
   process.exit(1);
 }
 
+// ── Date helpers (all in local timezone, not UTC) ────────────────────────
+
+// Returns a Date object representing "now" in the configured timezone.
+// GitHub Actions runs in UTC — this shifts the date to the correct local day.
+function nowLocal(){
+  const utc = new Date();
+  return new Date(utc.getTime() + TZ_OFFSET_HOURS * 60 * 60 * 1000);
+}
+
+function fmtDate(d){
+  // d is already shifted to local time — use UTC getters to read the shifted values
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth()+1).padStart(2,'0');
+  const day = String(d.getUTCDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function getUTCDay(d){ return d.getUTCDay(); } // 0=Sun, 6=Sat on the shifted date
+
+function getToday(){
+  return fmtDate(nowLocal());
+}
+
+function getNextWorkDay(){
+  const d = nowLocal();
+  do {
+    d.setUTCDate(d.getUTCDate()+1);
+  } while(getUTCDay(d)===0 || getUTCDay(d)===6);
+  return fmtDate(d);
+}
+
+function friendlyDate(dk){
+  // Parse YYYY-MM-DD as a local date (not UTC) for display
+  const [y,m,day] = dk.split('-').map(Number);
+  const obj = new Date(y, m-1, day);
+  return obj.toLocaleDateString('en-GB',{
+    weekday:'long', day:'numeric', month:'long', year:'numeric'
+  });
+}
+
 // ── Slot definitions (must match index.html exactly) ────────────────────
 const SLOTS = [
   { time:'09:00 – 10:00', lateOnly:false },
@@ -37,25 +82,7 @@ const SLOTS = [
   { time:'16:00 – 17:00', lateOnly:false },
 ];
 
-// ── Date helpers ────────────────────────────────────────────────────────
-function fmtDate(d){
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function getToday(){ return fmtDate(new Date()); }
-
-function getNextWorkDay(){
-  const d = new Date();
-  do { d.setDate(d.getDate()+1); } while(d.getDay()===0 || d.getDay()===6);
-  return fmtDate(d);
-}
-
-function friendlyDate(dk){
-  const obj = new Date(dk+'T00:00:00');
-  return obj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-}
-
-// ── Schedule logic (mirrors index.html buildSched exactly) ──────────────
+// ── Schedule logic (mirrors index.html buildSched exactly) ───────────────
 function shuffle(arr){
   const a = [...arr];
   for(let i=a.length-1; i>0; i--){
@@ -74,7 +101,9 @@ function buildSchedule(team, avail, dk){
   const randomPool  = team.filter(n => getStatus(avail,n,dk) === 'available');
 
   if(randomPool.length < 2){
-    throw new Error(`Not enough available members for ${dk} — need at least 2 set to Available`);
+    throw new Error(
+      `Not enough available members for ${dk} — need at least 2 set to Available`
+    );
   }
 
   const randShuf = shuffle(randomPool);
@@ -84,7 +113,6 @@ function buildSchedule(team, avail, dk){
   return SLOTS.map(s => {
     if(s.lateOnly){
       if(lateMembers.length === 0){
-        // No late person — fill with 2 random, flag warning
         const p = [];
         const seen = new Set();
         while(p.length < 2){
@@ -93,7 +121,6 @@ function buildSchedule(team, avail, dk){
         }
         return { ...s, assigned:p, hasLate:false, noLate:true };
       }
-      // Late shift person + 1 random
       const latePerson = lateShuf[li % lateShuf.length]; li++;
       let randPerson   = randShuf[ri % randShuf.length]; ri++;
       if(randPerson === latePerson){ randPerson = randShuf[ri % randShuf.length]; ri++; }
@@ -110,7 +137,7 @@ function buildSchedule(team, avail, dk){
   });
 }
 
-// ── Message builder (mirrors index.html buildMsg exactly) ───────────────
+// ── Message builder (mirrors index.html buildMsg exactly) ────────────────
 function getPtoLine(team, avail, dk){
   const ptoNames = team.filter(n => getStatus(avail,n,dk) === 'pto');
   return ptoNames.length > 0
@@ -118,22 +145,28 @@ function getPtoLine(team, avail, dk){
     : `🎉 The Whole Family Is Here!`;
 }
 
-function buildMessage(result, hd, team, avail, dk){
+function buildMessage(result, hd, team, avail, dk, isUpdate){
   const lines = result.map(s =>
-    `  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate ? '  *(late shift)*' : ''}`
+    `  ${s.time}  →  ${s.assigned.join(' · ')}` +
+    `${s.lateOnly && s.hasLate ? '  *(late shift)*' : ''}`
   );
+  const prefix = isUpdate ? '🔄 UPDATED — ' : '';
+  const update = isUpdate
+    ? '\n⚠ This schedule was updated due to an availability change.'
+    : '';
   return (
-    `📞 Phone Shift Schedule — ${hd}\n` +
+    `${prefix}📞 Phone Shift Schedule — ${hd}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `${lines.join('\n')}\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `🕐 Late shift: 12:00–13:00 and 14:00–15:00.\n` +
-    `${getPtoLine(team, avail, dk)}\n` +
+    `${getPtoLine(team, avail, dk)}` +
+    `${update}\n` +
     `Have a great day! 🙌`
   );
 }
 
-// ── JSONBin read ─────────────────────────────────────────────────────────
+// ── JSONBin read ──────────────────────────────────────────────────────────
 async function loadData(){
   console.log('📥 Reading data from JSONBin…');
   const r = await fetch(`https://api.jsonbin.io/v3/b/${JB_BIN}/latest`, {
@@ -145,7 +178,7 @@ async function loadData(){
   return d;
 }
 
-// ── WebEx send ───────────────────────────────────────────────────────────
+// ── WebEx send ────────────────────────────────────────────────────────────
 async function sendToWebEx(message){
   console.log('📤 Sending to WebEx…');
   const r = await fetch('https://webexapis.com/v1/messages', {
@@ -163,15 +196,20 @@ async function sendToWebEx(message){
   console.log('   ✅ Message sent successfully');
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────
 async function main(){
   const isEvening = SEND_TYPE === 'evening';
   const dk        = isEvening ? getNextWorkDay() : getToday();
   const hd        = friendlyDate(dk);
   const sendLabel = isEvening ? 'Evening (next work day)' : 'Morning (today)';
 
+  // Log times so it's easy to verify correct date in the Actions run log
+  const utcNow   = new Date();
+  const localNow = nowLocal();
   console.log(`\n🕐 Shift Scheduler — ${sendLabel} Send`);
-  console.log(`   Target date : ${hd}`);
+  console.log(`   UTC time    : ${utcNow.toISOString()}`);
+  console.log(`   Local time  : ${localNow.toISOString().replace('T',' ').slice(0,16)} (UTC${TZ_OFFSET_HOURS>=0?'+':''}${TZ_OFFSET_HOURS})`);
+  console.log(`   Target date : ${dk} (${hd})`);
   console.log(`   Send type   : ${SEND_TYPE}\n`);
 
   let data;
@@ -196,7 +234,7 @@ async function main(){
     process.exit(1);
   }
 
-  const message = buildMessage(result, hd, team, avail, dk);
+  const message = buildMessage(result, hd, team, avail, dk, false);
 
   console.log('\n📋 Schedule preview:');
   console.log('─'.repeat(50));

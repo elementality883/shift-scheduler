@@ -1,0 +1,75 @@
+# .github/workflows/send-schedule.yml
+#
+# Runs the shift scheduler WebEx send automatically at:
+#   - 08:45 Monday–Friday  (morning send — today's schedule)
+#   - 17:00 Monday–Friday  (evening send — next work day's schedule)
+#
+# GitHub Actions uses UTC. Adjust the cron times below for your timezone.
+# Examples:
+#   UTC+0  (UK/GMT)   : 08:45 = 08:45 UTC,  17:00 = 17:00 UTC
+#   UTC+1  (UK/BST)   : 08:45 = 07:45 UTC,  17:00 = 16:00 UTC
+#   UTC+9  (Japan)    : 08:45 = 23:45 UTC,  17:00 = 08:00 UTC  (prev day morning)
+#   UTC-5  (US EST)   : 08:45 = 13:45 UTC,  17:00 = 22:00 UTC
+#
+# Current setting below is for UTC+9 (Japan/Tokyo).
+# Change the cron expressions if your team is in a different timezone.
+
+name: Send Shift Schedule
+
+on:
+  schedule:
+    # Morning send — 08:45 JST = 23:45 UTC (previous day)
+    - cron: '45 23 * * 0-4'
+    # Evening send — 17:00 JST = 08:00 UTC
+    - cron: '0 8 * * 1-5'
+  # Allow manual trigger from GitHub Actions tab for testing
+  workflow_dispatch:
+    inputs:
+      send_type:
+        description: 'Which send to trigger'
+        required: true
+        default: 'evening'
+        type: choice
+        options:
+          - morning
+          - evening
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install node-fetch
+
+      - name: Determine send type
+        id: sendtype
+        run: |
+          # If manually triggered, use the input value
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "type=${{ github.event.inputs.send_type }}" >> $GITHUB_OUTPUT
+          else
+            # Determine from current UTC hour
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -lt 12 ]; then
+              echo "type=morning" >> $GITHUB_OUTPUT
+            else
+              echo "type=evening" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Send schedule to WebEx
+        env:
+          WEBEX_TOKEN: ${{ secrets.WEBEX_TOKEN }}
+          WEBEX_ROOM_ID: ${{ secrets.WEBEX_ROOM_ID }}
+          JSONBIN_KEY: ${{ secrets.JSONBIN_KEY }}
+          JSONBIN_BIN: ${{ secrets.JSONBIN_BIN }}
+          SEND_TYPE: ${{ steps.sendtype.outputs.type }}
+        run: node .github/scripts/send-schedule.js

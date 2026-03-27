@@ -15,7 +15,14 @@
 html,body{min-height:100%;background:var(--bg);}
 body{color:var(--text);font-family:'DM Mono',monospace;padding:24px 16px 60px;}
 
-/* SETUP */
+/* UNLOCK */
+.unlock{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;gap:16px;padding:16px;}
+.unlock h2{font-family:'Syne',sans-serif;font-weight:800;font-size:1.6rem;text-align:center;}
+.unlock h2 em{color:var(--accent);font-style:normal;}
+.unlock-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px 26px;max-width:400px;width:100%;}
+.unlock-card h3{font-family:'Syne',sans-serif;font-weight:700;font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;}
+.unlock-card p{font-size:0.75rem;color:var(--muted);line-height:1.6;margin-bottom:14px;}
+
 .setup{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;gap:16px;padding:16px;}
 .setup h2{font-family:'Syne',sans-serif;font-weight:800;font-size:1.6rem;text-align:center;}
 .setup h2 em{color:var(--accent);font-style:normal;}
@@ -144,6 +151,20 @@ select option{background:#1e2330;}
 <!-- Loading overlay -->
 <div class="ov hidden" id="ov"><div class="spin"></div></div>
 
+<!-- ═══════════════════ UNLOCK SCREEN ═══════════════════ -->
+<!-- Shown on return visits — passphrase required to decrypt localStorage -->
+<div class="unlock" id="unlockWrap" style="display:none">
+  <h2>📞 Shift <em>Scheduler</em></h2>
+  <div class="unlock-card">
+    <h3>🔒 Enter Passphrase</h3>
+    <p>Your stored credentials are encrypted. Enter your passphrase to unlock.</p>
+    <div class="field-lbl">Passphrase</div>
+    <input class="setup-inp" type="password" id="inpUnlock" placeholder="Enter your passphrase…" style="margin-bottom:10px">
+    <div class="errtxt" id="unlockErr"></div>
+    <button class="btn btn-big" id="btnUnlock" style="margin-top:10px">🔓 Unlock</button>
+  </div>
+</div>
+
 <!-- ═══════════════════ SETUP SCREEN ═══════════════════ -->
 <!-- Visible by default — hidden by JS once credentials saved -->
 <div class="setup" id="setupWrap">
@@ -184,8 +205,8 @@ select option{background:#1e2330;}
       <div class="step">
         <div class="sn">4</div>
         <div class="sb">
-          Paste both values below and click <strong>Connect</strong>.
-          Share the same API Key + Bin ID with your team — they only need to do this once.
+          Paste both values below, set a <strong>passphrase</strong>, and click <strong>Connect</strong>.
+          Share the API Key, Bin ID, and passphrase with your team — they only need to do this once.
         </div>
       </div>
 
@@ -196,6 +217,9 @@ select option{background:#1e2330;}
 
     <div class="field-lbl">Bin ID</div>
     <input class="setup-inp" type="text" id="inpBin" placeholder="64a3f…" style="margin-top:4px">
+
+    <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
+    <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
 
     <div class="errtxt" id="setupErr"></div>
 
@@ -348,11 +372,72 @@ const SLOTS=[
 ];
 
 // ═══════════════════════════════════════════════════════
-// SAFE STORAGE  (localStorage may be blocked in iframes)
+// ENCRYPTED STORAGE  (AES-GCM via Web Crypto API)
+// Passphrase → PBKDF2 → AES-GCM key → encrypt/decrypt LS values
+// The passphrase is held in memory only — never stored.
+// A random salt is stored unencrypted (safe — not a secret).
 // ═══════════════════════════════════════════════════════
-const LS={
-  get(k){try{return localStorage.getItem(k);}catch{return null;}},
-  set(k,v){try{localStorage.setItem(k,v);}catch{}},
+const LS_SALT = 'sched_salt'; // stores the PBKDF2 salt (not secret)
+let cryptoKey = null;         // in-memory only, cleared on page close
+
+function buf2hex(buf){ return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function hex2buf(hex){ return new Uint8Array(hex.match(/.{2}/g).map(b=>parseInt(b,16))); }
+
+async function deriveKey(passphrase, salt){
+  const enc = new TextEncoder();
+  const raw = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:200000, hash:'SHA-256' },
+    raw,
+    { name:'AES-GCM', length:256 },
+    false,
+    ['encrypt','decrypt']
+  );
+}
+
+async function encryptVal(plaintext){
+  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, cryptoKey, enc.encode(plaintext));
+  // store as iv_hex:ciphertext_hex
+  return buf2hex(iv) + ':' + buf2hex(buf);
+}
+
+async function decryptVal(stored){
+  const [ivHex, ctHex] = stored.split(':');
+  if(!ivHex||!ctHex) throw new Error('bad format');
+  const dec = new TextDecoder();
+  const buf = await crypto.subtle.decrypt(
+    { name:'AES-GCM', iv: hex2buf(ivHex) },
+    cryptoKey,
+    hex2buf(ctHex)
+  );
+  return dec.decode(buf);
+}
+
+// Safe raw localStorage (unencrypted — only used for salt and legacy fallback)
+function lsRaw(k){ try{ return localStorage.getItem(k); }catch{ return null; } }
+function lsRawSet(k,v){ try{ localStorage.setItem(k,v); }catch{} }
+function lsRawDel(k){ try{ localStorage.removeItem(k); }catch{} }
+
+// Encrypted LS — all app credentials go through these
+const LS = {
+  async get(k){
+    try{
+      const stored = lsRaw(k);
+      if(!stored) return null;
+      if(!cryptoKey) return null; // not unlocked
+      return await decryptVal(stored);
+    }catch{ return null; }
+  },
+  async set(k,v){
+    try{
+      if(!cryptoKey) return;
+      const enc = await encryptVal(String(v));
+      lsRawSet(k, enc);
+    }catch{}
+  },
+  del(k){ lsRawDel(k); }
 };
 
 // ═══════════════════════════════════════════════════════
@@ -380,12 +465,42 @@ async function jbWrite(payload){
 // ═══════════════════════════════════════════════════════
 function boot(){
   wireEvents();
-  jbKey=LS.get(LSK);
-  jbBin=LS.get(LSB);
-  if(jbKey && jbBin){
-    loadAndLaunch();
+  const salt = lsRaw(LS_SALT);
+  if(salt){
+    // Returning user — show unlock screen
+    document.getElementById('setupWrap').style.display  = 'none';
+    document.getElementById('unlockWrap').style.display = 'flex';
   }
-  // else setup screen is already visible
+  // else: setup screen already visible by default
+}
+
+async function unlock(){
+  const pass  = document.getElementById('inpUnlock').value;
+  const errEl = document.getElementById('unlockErr');
+  errEl.style.display = 'none';
+  if(!pass){ errEl.textContent='Enter your passphrase.'; errEl.style.display='block'; return; }
+
+  showOv();
+  try{
+    const saltHex = lsRaw(LS_SALT);
+    const salt    = hex2buf(saltHex);
+    cryptoKey     = await deriveKey(pass, salt);
+
+    // Try decrypting the stored API key as a validation check
+    const testKey = await LS.get(LSK);
+    if(!testKey){ throw new Error('wrong'); }
+
+    jbKey = testKey;
+    jbBin = await LS.get(LSB);
+    hideOv();
+    await loadAndLaunch();
+  }catch(e){
+    cryptoKey = null;
+    hideOv();
+    errEl.textContent = 'Incorrect passphrase — please try again.';
+    errEl.style.display = 'block';
+    document.getElementById('inpUnlock').value = '';
+  }
 }
 
 async function loadAndLaunch(){
@@ -394,8 +509,7 @@ async function loadAndLaunch(){
     const d=await jbRead();
     team=d.team||[]; avail=d.avail||{}; localOnly=false;
   }catch(e){
-    // Fall back to local cache
-    const c=LS.get(LSD);
+    const c=await LS.get(LSD);
     if(c){try{const d=JSON.parse(c);team=d.team||[];avail=d.avail||{};}catch{}}
     toast('⚠ JSONBin unreachable — using cached data');
   }
@@ -403,14 +517,15 @@ async function loadAndLaunch(){
   showApp();
 }
 
-function showApp(){
+async function showApp(){
   document.getElementById('setupWrap').style.display='none';
+  document.getElementById('unlockWrap').style.display='none';
   document.getElementById('appWrap').style.display='block';
   document.getElementById('schedDate').value=fmtD(new Date());
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
   // Restore saved auto-send credentials
-  const savedTok=LS.get(LSWT), savedRoom=LS.get(LSWR);
+  const savedTok=await LS.get(LSWT), savedRoom=await LS.get(LSWR);
   if(savedTok)  document.getElementById('wxTok').value=savedTok;
   if(savedRoom) document.getElementById('wxRoom').value=savedRoom;
   // Auto-generate today's schedule immediately on load
@@ -421,6 +536,7 @@ function showApp(){
 
 function showSetup(){
   document.getElementById('appWrap').style.display='none';
+  document.getElementById('unlockWrap').style.display='none';
   document.getElementById('setupWrap').style.display='flex';
   if(jbKey) document.getElementById('inpKey').value=jbKey;
   if(jbBin) document.getElementById('inpBin').value=jbBin;
@@ -430,37 +546,44 @@ function showSetup(){
 // CONNECT
 // ═══════════════════════════════════════════════════════
 async function connect(){
-  const key=document.getElementById('inpKey').value.trim();
-  const bin=document.getElementById('inpBin').value.trim();
-  const err=document.getElementById('setupErr');
+  const key  = document.getElementById('inpKey').value.trim();
+  const bin  = document.getElementById('inpBin').value.trim();
+  const pass = document.getElementById('inpPass').value;
+  const err  = document.getElementById('setupErr');
   err.style.display='none';
 
-  if(!key||!bin){
-    err.textContent='Please fill in both fields.';
-    err.style.display='block';
-    return;
-  }
+  if(!key||!bin){ err.textContent='Please fill in the API Key and Bin ID.'; err.style.display='block'; return; }
+  if(!pass){ err.textContent='Please set a passphrase to encrypt your credentials.'; err.style.display='block'; return; }
 
   jbKey=key; jbBin=bin;
   showOv();
   try{
+    // Verify the credentials work before saving
     const d=await jbRead();
     team=d.team||[]; avail=d.avail||{};
-    LS.set(LSK,jbKey); LS.set(LSB,jbBin);
+
+    // Derive encryption key from passphrase
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    lsRawSet(LS_SALT, buf2hex(salt));
+    cryptoKey = await deriveKey(pass, salt);
+
+    // Encrypt and store credentials
+    await LS.set(LSK, jbKey);
+    await LS.set(LSB, jbBin);
     localOnly=false;
     hideOv();
     showApp();
   }catch(e){
     hideOv();
-    jbKey=null; jbBin=null;
+    jbKey=null; jbBin=null; cryptoKey=null;
     err.textContent='Could not connect: '+e.message;
     err.style.display='block';
   }
 }
 
-function useLocal(){
+async function useLocal(){
   localOnly=true; jbKey=null; jbBin=null;
-  const c=LS.get(LSD);
+  const c=await LS.get(LSD);
   if(c){try{const d=JSON.parse(c);team=d.team||[];avail=d.avail||{};}catch{}}
   showApp();
 }
@@ -479,12 +602,11 @@ function scheduleSave(changedDate){
 
 async function doSave(){
   const p={team,avail};
-  LS.set(LSD,JSON.stringify(p));
+  await LS.set(LSD,JSON.stringify(p));
   if(localOnly||!jbKey||!jbBin){setSyncState('local');return;}
   try{
     await jbWrite(p);
     setSyncState('ok');
-    // After a successful save, check if the changed date needs an auto-send update
     if(lastChangedDate){
       checkAvailabilityTrigger(lastChangedDate);
       lastChangedDate=null;
@@ -504,11 +626,15 @@ function setSyncState(s){
 // WIRE EVENTS  (zero inline handlers — CSP safe)
 // ═══════════════════════════════════════════════════════
 function wireEvents(){
+  // Unlock screen
+  on('btnUnlock',    'click', unlock);
+  on('inpUnlock',    'keydown', e=>{ if(e.key==='Enter') unlock(); });
   // Setup
   on('btnConnect',   'click', connect);
   on('btnLocalOnly', 'click', useLocal);
   on('inpKey',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpBin').focus(); });
-  on('inpBin',       'keydown', e=>{ if(e.key==='Enter') connect(); });
+  on('inpBin',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpPass').focus(); });
+  on('inpPass',      'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header
   on('btnRecfg',     'click', showSetup);
   // Tabs — delegate
@@ -717,9 +843,9 @@ function copyMsg(){
 // Core activation — accepts credentials directly so it works
 // even when the Auto-Send tab is hidden (display:none inputs
 // are unreliable in some browsers when read via .value)
-function activateAS(tok, room){
+async function activateAS(tok, room){
   if(!tok||!room){ toast('Enter Bot Token and Room ID.'); return; }
-  LS.set(LSWT,tok); LS.set(LSWR,room);
+  await LS.set(LSWT,tok); await LS.set(LSWR,room);
   const el=id=>document.getElementById(id);
   el('wxTok').value=tok; el('wxRoom').value=room;
   asActive=true;
@@ -729,10 +855,10 @@ function activateAS(tok, room){
 }
 
 // Called by the Activate button — reads from DOM fields
-function startAS(){
+async function startAS(){
   const tok=document.getElementById('wxTok').value.trim();
   const room=document.getElementById('wxRoom').value.trim();
-  activateAS(tok, room);
+  await activateAS(tok, room);
 }
 
 function stopAS(){
@@ -751,12 +877,11 @@ function getNextWorkDay(){
 
 // Called after every successful save when an availability cell was changed.
 // If auto-send is active and the changed date is today, send an updated schedule.
-function checkAvailabilityTrigger(changedDate){
+async function checkAvailabilityTrigger(changedDate){
   if(!asActive) return;
-  const tok=LS.get(LSWT);
-  const room=LS.get(LSWR);
+  const tok=await LS.get(LSWT);
+  const room=await LS.get(LSWR);
   if(!tok||!room) return;
-
   const todayKey=fmtD(new Date());
   if(changedDate===todayKey){
     toast(`🔄 Availability changed — sending updated schedule…`);

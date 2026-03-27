@@ -1,15 +1,14 @@
 # .github/workflows/send-schedule.yml
 #
 # Sends the shift schedule to WebEx at:
-#   08:00 JST  (morning — today's schedule)
-#   17:00 JST  (evening — next work day's schedule)
+#   08:00 JST  Monday–Friday  (morning — today's schedule)
+#   17:00 JST  Monday–Friday  (evening — next work day's schedule)
 #
-# JST = UTC+9, so:
-#   08:00 JST = 23:00 UTC the PREVIOUS day  → cron fires Sun–Thu at 23:00 UTC
-#   17:00 JST = 08:00 UTC the SAME day      → cron fires Mon–Fri at 08:00 UTC
+# JST = UTC+9
+#   08:00 JST = 23:00 UTC the previous day  → cron: Sun–Thu at 23:00 UTC
+#   17:00 JST = 08:00 UTC the same day      → cron: Mon–Fri at 08:00 UTC
 #
-# SEND_TYPE is set explicitly in each cron trigger via a separate job,
-# avoiding the unreliable "detect from UTC hour" approach.
+# SEND_TYPE is passed explicitly via the matrix — no hour-detection guesswork.
 
 name: Send Shift Schedule
 
@@ -20,6 +19,7 @@ on:
     # 17:00 JST = 08:00 UTC (Mon–Fri)
     - cron: '0 8 * * 1,2,3,4,5'
 
+  # Allow manual trigger from the Actions tab for testing
   workflow_dispatch:
     inputs:
       send_type:
@@ -31,7 +31,7 @@ on:
           - morning
           - evening
 
-# Force all Actions to use Node.js 24
+# Force all Actions to use Node.js 24 (avoids Node 20 deprecation warning)
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -54,14 +54,14 @@ jobs:
         id: sendtype
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual trigger — use the selected input
+            # Manual trigger — use the dropdown selection
             echo "type=${{ github.event.inputs.send_type }}" >> $GITHUB_OUTPUT
           else
             # Scheduled trigger — determine by UTC hour
-            # 23:xx UTC = morning send (08:00 JST next day)
-            # 08:xx UTC = evening send (17:00 JST same day)
+            # 23:xx UTC → morning send (08:00 JST)
+            # 08:xx UTC → evening send (17:00 JST)
             HOUR=$(date -u +%H)
-            if [ "$HOUR" -ge 20 ]; then
+            if [ "$HOUR" -ge 20 ] || [ "$HOUR" -lt 4 ]; then
               echo "type=morning" >> $GITHUB_OUTPUT
             else
               echo "type=evening" >> $GITHUB_OUTPUT

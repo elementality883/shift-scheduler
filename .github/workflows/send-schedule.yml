@@ -15,8 +15,8 @@ name: Send Shift Schedule
 on:
   schedule:
     # ── TEST: every 30 minutes (remove these two lines when done testing) ──
-    - cron: '0 */1 * * *'
-    - cron: '30 */1 * * *'
+    - cron: '0 * * * *'
+    - cron: '30 * * * *'
 
     # ── PRODUCTION: uncomment these and remove the test lines above ────────
     # 08:00 JST = 23:00 UTC (Sun–Thu covers Mon–Fri JST mornings)

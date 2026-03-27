@@ -164,6 +164,18 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 </head>
 <body>
 
+<!-- PIN SETUP modal — shown after connect when no admin PIN exists in JSONBin yet -->
+<div class="pin-modal hidden" id="pinSetupModal">
+  <div class="pin-card">
+    <div class="pin-title">🔐 Set Admin PIN</div>
+    <p class="pin-sub">No PIN is set yet. Create a PIN to protect previous weeks from being edited. All team members will need to enter this PIN to edit past availability.</p>
+    <input type="password" class="setup-inp" id="pinSetupInput" placeholder="Choose a PIN…" maxlength="20" style="margin-bottom:8px;text-align:center;letter-spacing:0.2em;">
+    <input type="password" class="setup-inp" id="pinSetupConfirm" placeholder="Confirm PIN…" maxlength="20" style="text-align:center;letter-spacing:0.2em;">
+    <div class="errtxt" id="pinSetupErr"></div>
+    <button class="btn btn-big" id="btnPinSetupConfirm" style="margin-top:12px">Set PIN & Continue →</button>
+  </div>
+</div>
+
 <!-- PIN modal — shown when editing past week without unlock -->
 <div class="pin-modal hidden" id="pinModal">
   <div class="pin-card">
@@ -256,10 +268,10 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
     <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
 
-    <!-- PIN field: shown on first-time setup AND when reconfiguring -->
-    <div id="pinChangeRow">
-      <div class="field-lbl" style="margin-top:10px">Admin PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(locks editing of previous weeks for all users)</span></div>
-      <input class="setup-inp" type="password" id="inpPin" placeholder="Choose a PIN…" style="margin-top:4px">
+    <!-- PIN fields — only shown when reconfiguring via ⚙ Storage -->
+    <div id="pinChangeRow" style="display:none">
+      <div class="field-lbl" style="margin-top:10px">New PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(enter new PIN to change)</span></div>
+      <input class="setup-inp" type="password" id="inpPin" placeholder="Enter new PIN…" style="margin-top:4px">
     </div>
 
     <!-- Shown only when reconfiguring and a PIN is already set -->
@@ -713,34 +725,6 @@ async function showSetup(){
 
 // Called when Bin ID field loses focus on the setup screen.
 // Peeks at JSONBin (no auth needed for a public read attempt) to check
-// whether an admin PIN is already saved. If yes, hides the PIN field
-// so regular users cannot set their own — the admin's PIN will be used.
-async function peekBinForPin(){
-  const key = document.getElementById('inpKey').value.trim();
-  const bin = document.getElementById('inpBin').value.trim();
-  if(!key||!bin) return;
-  const pinRow = document.getElementById('pinChangeRow');
-  const pinInp = document.getElementById('inpPin');
-  try{
-    const r = await fetch(`https://api.jsonbin.io/v3/b/${bin}/latest`,{
-      headers:{'X-Master-Key':key,'X-Bin-Meta':'false'}
-    });
-    if(!r.ok) return; // invalid credentials — let connect() handle the error
-    const d = await r.json();
-    if(d.pin){
-      // Admin PIN already set — hide field, clear any input
-      pinRow.style.display='none';
-      pinInp.value='';
-    } else {
-      // No PIN yet — this is the admin, show the field
-      pinRow.style.display='block';
-    }
-  }catch{
-    // Network error — show the field and let connect() decide
-    pinRow.style.display='block';
-  }
-}
-
 async function connect(){
   const key = document.getElementById('inpKey').value.trim();
   const bin = document.getElementById('inpBin').value.trim();
@@ -809,15 +793,8 @@ async function connect(){
 
   } else {
     // ── FIRST-TIME SETUP MODE ─────────────────────────────────────────────
-    // Run the peek now (in case blur never fired) to update PIN field visibility
-    await peekBinForPin();
-
-    const pass    = document.getElementById('inpPass').value;
-    const pin     = document.getElementById('inpPin').value;
-    const pinVisible = document.getElementById('pinChangeRow').style.display !== 'none';
+    const pass = document.getElementById('inpPass').value;
     if(!pass){ err.textContent='Please set a passphrase to encrypt your credentials.'; err.style.display='block'; return; }
-    // Only require PIN if the field is visible (i.e. no existing PIN in JSONBin)
-    if(pinVisible && !pin){ err.textContent='Please set an Admin PIN to protect previous weeks.'; err.style.display='block'; return; }
 
     jbKey=key; jbBin=bin;
     showOv();
@@ -831,36 +808,25 @@ async function connect(){
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
+      localOnly=false;
 
-      // Check if a PIN already exists in JSONBin (set by admin previously).
-      // If yes: use the existing encrypted PIN — do NOT accept the field input.
-      // If no:  this IS the admin — require and save the PIN from the field.
       if(d.pin){
-        // Existing PIN in JSONBin — decrypt it into memory, ignore field input
+        // PIN already set by admin — decrypt and use it silently
         currentPin = await decryptPin(d.pin);
-        // Note: decryptPin uses the freshly-derived cryptoKey — if it returns null
-        // it means this bin was encrypted with a different passphrase (wrong credentials)
         if(!currentPin){
           hideOv();
           jbKey=null; jbBin=null; cryptoKey=null;
           err.textContent='Could not decrypt existing data — check your passphrase.';
           err.style.display='block'; return;
         }
+        hideOv();
+        await doSave();
+        showApp();
       } else {
-        // No PIN in JSONBin yet — this is the first admin setup, PIN field is required
-        if(!pin){
-          hideOv();
-          jbKey=null; jbBin=null; cryptoKey=null;
-          err.textContent='Please set an Admin PIN to protect previous weeks.';
-          err.style.display='block'; return;
-        }
-        currentPin = pin;
+        // No PIN in JSONBin yet — prompt admin to create one before loading
+        hideOv();
+        showPinSetupModal();
       }
-
-      localOnly=false;
-      hideOv();
-      await doSave();
-      showApp();
     }catch(e){
       hideOv();
       jbKey=null; jbBin=null; cryptoKey=null;
@@ -927,6 +893,10 @@ function wireEvents(){
   // Unlock screen
   on('btnUnlock',    'click', unlock);
   on('inpUnlock',    'keydown', e=>{ if(e.key==='Enter') unlock(); });
+  // PIN setup modal (admin first-time PIN creation)
+  on('btnPinSetupConfirm', 'click', confirmPinSetup);
+  on('pinSetupInput',      'keydown', e=>{ if(e.key==='Enter') document.getElementById('pinSetupConfirm').focus(); });
+  on('pinSetupConfirm',    'keydown', e=>{ if(e.key==='Enter') confirmPinSetup(); });
   // PIN modal
   on('btnPinConfirm', 'click', verifyPin);
   on('btnPinCancel',  'click', ()=>closePinModal(false));
@@ -941,7 +911,6 @@ function wireEvents(){
   on('btnLocalOnly', 'click', useLocal);
   on('inpKey',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpBin').focus(); });
   on('inpBin',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpPass').focus(); });
-  on('inpBin',       'blur',    peekBinForPin);
   on('inpPass',      'keydown', e=>{ if(e.key==='Enter') connect(); });
   on('inpCurrPin',   'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header
@@ -1037,6 +1006,35 @@ function getMonday(d){const dt=new Date(d);dt.setHours(0,0,0,0);const day=dt.get
 function isPastWeek(){
   const currentMonday = getMonday(new Date());
   return wkStart < currentMonday;
+}
+
+// ── First-time PIN setup (admin only, post-connect) ───────────────────────
+function showPinSetupModal(){
+  document.getElementById('setupWrap').style.display='none';
+  document.getElementById('pinSetupModal').classList.remove('hidden');
+  document.getElementById('pinSetupInput').value='';
+  document.getElementById('pinSetupConfirm').value='';
+  document.getElementById('pinSetupErr').style.display='none';
+  setTimeout(()=>document.getElementById('pinSetupInput').focus(), 50);
+}
+
+async function confirmPinSetup(){
+  const pin     = document.getElementById('pinSetupInput').value;
+  const confirm = document.getElementById('pinSetupConfirm').value;
+  const errEl   = document.getElementById('pinSetupErr');
+  errEl.style.display='none';
+  if(!pin){ errEl.textContent='Please enter a PIN.'; errEl.style.display='block'; return; }
+  if(pin !== confirm){
+    errEl.textContent='PINs do not match — please try again.';
+    errEl.style.display='block';
+    document.getElementById('pinSetupConfirm').value='';
+    document.getElementById('pinSetupConfirm').focus();
+    return;
+  }
+  currentPin = pin;
+  document.getElementById('pinSetupModal').classList.add('hidden');
+  await doSave();
+  showApp();
 }
 
 // Show the PIN modal; onSuccess callback runs if PIN is correct

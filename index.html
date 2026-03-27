@@ -664,7 +664,7 @@ async function loadAndLaunch(){
     const d=await jbRead();
     team=d.team||[]; avail=d.avail||{}; localOnly=false;
     // Decrypt PIN and WebEx credentials from JSONBin — never touch localStorage
-    currentPin = d.pin    ? await decryptPin(d.pin)    : null;
+    currentPin = d.pin    ? d.pin                                  : null;
     wxToken    = d.wxTok  ? await decryptWx(d.wxTok)   : null;
     wxRoom     = d.wxRoom ? await decryptWx(d.wxRoom)  : null;
   }catch(e){
@@ -811,14 +811,8 @@ async function connect(){
       localOnly=false;
 
       if(d.pin){
-        // PIN already set by admin — decrypt and use it silently
-        currentPin = await decryptPin(d.pin);
-        if(!currentPin){
-          hideOv();
-          jbKey=null; jbBin=null; cryptoKey=null;
-          err.textContent='Could not decrypt existing data — check your passphrase.';
-          err.style.display='block'; return;
-        }
+        // PIN already set by admin — load directly, no decryption needed
+        currentPin = d.pin;
         hideOv();
         await doSave();
         showApp();
@@ -856,13 +850,13 @@ function scheduleSave(changedDate){
 }
 
 async function doSave(){
-  // Encrypt sensitive fields for JSONBin storage
-  const encryptedPin   = currentPin ? await encryptPin(currentPin) : null;
-  const encryptedTok   = wxToken    ? await encryptWx(wxToken)     : null;
-  const encryptedRoom  = wxRoom     ? await encryptWx(wxRoom)      : null;
+  // PIN stored as plain text in JSONBin — access is controlled by the API key.
+  // WebEx credentials encrypted with user's passphrase-derived key.
+  const encryptedTok   = wxToken ? await encryptWx(wxToken) : null;
+  const encryptedRoom  = wxRoom  ? await encryptWx(wxRoom)  : null;
   const p = {
     team, avail,
-    ...(encryptedPin  ? {pin:    encryptedPin}  : {}),
+    ...(currentPin    ? {pin:    currentPin}    : {}),
     ...(encryptedTok  ? {wxTok:  encryptedTok}  : {}),
     ...(encryptedRoom ? {wxRoom: encryptedRoom} : {}),
   };

@@ -459,17 +459,17 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 // STATE
 // ═══════════════════════════════════════════════════════
 const JB   = 'https://api.jsonbin.io/v3';
-const LSK  = 'sched_jb_key';
-const LSB  = 'sched_jb_bin';
-const LSD  = 'sched_local';
-const LSWT = 'sched_wx_tok';
-const LSWR = 'sched_wx_room';
-const LSPIN = 'sched_pin'; // encrypted PIN for past-week lock
+const LSK  = 'sched_jb_key';   // encrypted: JSONBin API key
+const LSB  = 'sched_jb_bin';   // encrypted: JSONBin Bin ID
+const LSD  = 'sched_local';    // encrypted: local cache fallback
+// All other credentials (WebEx token/room, PIN) live in JSONBin — not localStorage.
 
 let team=[], avail={}, jbKey=null, jbBin=null, localOnly=false;
+let wxToken=null, wxRoom=null;  // in-memory only — loaded from JSONBin, never localStorage
 let saveTimer=null, wkStart=getMonday(new Date()), asActive=false;
-let pastWeekUnlocked=false; // session-only flag — resets on page reload
-let pendingPinAction=null;  // callback to run after successful PIN entry
+let pastWeekUnlocked=false;
+let pendingPinAction=null;
+let currentPin=null;
 
 // lateOnly:true  = ONLY the designated late-shift person is assigned here
 // lateOnly:false = normal random pool; late-shift person is EXCLUDED from these slots
@@ -532,6 +532,33 @@ async function decryptVal(stored){
 function lsRaw(k){ try{ return localStorage.getItem(k); }catch{ return null; } }
 function lsRawSet(k,v){ try{ localStorage.setItem(k,v); }catch{} }
 function lsRawDel(k){ try{ localStorage.removeItem(k); }catch{} }
+
+// ── PIN crypto helpers ────────────────────────────────────────────────────
+// The PIN is encrypted with the same AES-GCM cryptoKey (passphrase-derived)
+// and stored as a field in the JSONBin payload — never in localStorage.
+
+async function encryptPin(pin){
+  if(!pin||!cryptoKey) return null;
+  return encryptVal(pin);
+}
+
+async function decryptPin(stored){
+  if(!stored||!cryptoKey) return null;
+  try{ return await decryptVal(stored); }
+  catch{ return null; }
+}
+
+// WebEx credentials — encrypted in JSONBin, never in localStorage
+async function encryptWx(val){
+  if(!val||!cryptoKey) return null;
+  return encryptVal(val);
+}
+
+async function decryptWx(stored){
+  if(!stored||!cryptoKey) return null;
+  try{ return await decryptVal(stored); }
+  catch{ return null; }
+}
 
 // Encrypted LS — all app credentials go through these
 const LS = {
@@ -621,6 +648,10 @@ async function loadAndLaunch(){
   try{
     const d=await jbRead();
     team=d.team||[]; avail=d.avail||{}; localOnly=false;
+    // Decrypt PIN and WebEx credentials from JSONBin — never touch localStorage
+    currentPin = d.pin    ? await decryptPin(d.pin)    : null;
+    wxToken    = d.wxTok  ? await decryptWx(d.wxTok)   : null;
+    wxRoom     = d.wxRoom ? await decryptWx(d.wxRoom)  : null;
   }catch(e){
     const c=await LS.get(LSD);
     if(c){try{const d=JSON.parse(c);team=d.team||[];avail=d.avail||{};}catch{}}
@@ -644,14 +675,13 @@ async function showApp(){
   if(ey&&!ey.value) ey.value=new Date().getFullYear();
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
-  // Restore saved auto-send credentials (stored plain, not encrypted)
-  const savedTok=lsRaw(LSWT), savedRoom=lsRaw(LSWR);
-  if(savedTok)  document.getElementById('wxTok').value=savedTok;
-  if(savedRoom) document.getElementById('wxRoom').value=savedRoom;
+  // Restore WebEx credentials from memory (loaded from JSONBin on unlock)
+  if(wxToken)  document.getElementById('wxTok').value=wxToken;
+  if(wxRoom)   document.getElementById('wxRoom').value=wxRoom;
   // Auto-generate today's schedule immediately on load
   generate();
-  // Auto-activate auto-send if credentials are already saved
-  if(savedTok && savedRoom){ activateAS(savedTok, savedRoom); }
+  // Auto-activate auto-send if credentials are already in memory
+  if(wxToken && wxRoom){ activateAS(wxToken, wxRoom); }
 }
 
 async function showSetup(){
@@ -668,10 +698,9 @@ async function showSetup(){
   document.getElementById('inpCurrPin').value='';
   document.getElementById('inpPass').placeholder='New passphrase (leave blank to keep current)';
 
-  // Only show PIN verification row if a PIN is already set
-  const storedPin = await LS.get(LSPIN);
+  // Only show PIN verification row if a PIN is currently set
   const currPinRow = document.getElementById('currPinRow');
-  if(storedPin){
+  if(currentPin){
     currPinRow.style.display='block';
     document.getElementById('inpPin').placeholder='New PIN to replace, or leave blank to remove';
   } else {
@@ -696,16 +725,14 @@ async function connect(){
 
   if(isReconfig){
     // ── RECONFIGURATION MODE ─────────────────────────────
-    const storedPin = await LS.get(LSPIN);
-
     // If a PIN is set, verify it before allowing passphrase or PIN changes
-    if(storedPin){
+    if(currentPin){
       const currPin = document.getElementById('inpCurrPin').value;
       if(!currPin){
         err.textContent='Enter your current PIN to save changes.';
         err.style.display='block'; return;
       }
-      if(currPin !== storedPin){
+      if(currPin !== currentPin){
         err.textContent='Incorrect PIN — changes not saved.';
         err.style.display='block';
         document.getElementById('inpCurrPin').value='';
@@ -732,10 +759,9 @@ async function connect(){
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
 
-      // PIN: new value if provided, remove if blank was entered where a PIN existed
+      // PIN: update in-memory currentPin — doSave will encrypt and persist to JSONBin
       const newPin = document.getElementById('inpPin').value;
-      if(newPin)      { await LS.set(LSPIN, newPin); }
-      else            { LS.del(LSPIN); }
+      currentPin = newPin || null;
 
       localOnly=false;
       hideOv();
@@ -765,9 +791,8 @@ async function connect(){
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
-      const pinVal = document.getElementById('inpPin')?.value || '';
-      if(pinVal){ await LS.set(LSPIN, pinVal); }
-      else { LS.del(LSPIN); }
+      // Set PIN in memory — doSave will encrypt and persist it to JSONBin
+      currentPin = document.getElementById('inpPin')?.value || null;
 
       localOnly=false;
       hideOv();
@@ -801,8 +826,17 @@ function scheduleSave(changedDate){
 }
 
 async function doSave(){
-  const p={team,avail};
-  await LS.set(LSD,JSON.stringify(p));
+  // Encrypt sensitive fields for JSONBin storage
+  const encryptedPin   = currentPin ? await encryptPin(currentPin) : null;
+  const encryptedTok   = wxToken    ? await encryptWx(wxToken)     : null;
+  const encryptedRoom  = wxRoom     ? await encryptWx(wxRoom)      : null;
+  const p = {
+    team, avail,
+    ...(encryptedPin  ? {pin:    encryptedPin}  : {}),
+    ...(encryptedTok  ? {wxTok:  encryptedTok}  : {}),
+    ...(encryptedRoom ? {wxRoom: encryptedRoom} : {}),
+  };
+  await LS.set(LSD,JSON.stringify({team,avail})); // local cache (credentials excluded)
   if(localOnly||!jbKey||!jbBin){setSyncState('local');return;}
   try{
     await jbWrite(p);
@@ -958,13 +992,12 @@ async function verifyPin(){
   const entered = inp.value;
   err.style.display='none';
   if(!entered){ err.textContent='Enter the PIN.'; err.style.display='block'; return; }
-  const stored = await LS.get(LSPIN);
-  if(!stored){
+  if(!currentPin){
     // No PIN configured — allow through
     closePinModal(true);
     return;
   }
-  if(entered === stored){
+  if(entered === currentPin){
     closePinModal(true);
   } else {
     err.textContent='Incorrect PIN. Try again.';
@@ -1000,7 +1033,7 @@ async function renderAvail(){
 
   // Determine if this week is locked
   const past = isPastWeek();
-  const storedPin = await LS.get(LSPIN);
+  const storedPin = currentPin;
   const locked = past && !!storedPin && !pastWeekUnlocked;
 
   // Week label with lock badge if locked
@@ -1047,7 +1080,7 @@ async function setAv(name,dk,sel){
   // If this date is in a past week and PIN is set and not yet unlocked,
   // revert the visual change and show the PIN modal
   const past = isPastWeek();
-  const storedPin = await LS.get(LSPIN);
+  const storedPin = currentPin;
   if(past && storedPin && !pastWeekUnlocked){
     // Revert select to previous value
     const prev = getSt(name,dk);
@@ -1142,8 +1175,7 @@ async function applyBulk(){
   // Check if the range touches any past week and PIN is required
   const currentMonday = getMonday(new Date());
   const fromMonday    = getMonday(new Date(from+'T00:00:00'));
-  const storedPin     = await LS.get(LSPIN);
-  if(fromMonday < currentMonday && storedPin && !pastWeekUnlocked){
+  if(fromMonday < currentMonday && currentPin && !pastWeekUnlocked){
     showPinModal(()=>applyBulk()); // retry after unlock
     return;
   }
@@ -1405,20 +1437,19 @@ function copyMsg(){
 // AUTO-SEND
 // ═══════════════════════════════════════════════════════
 
-// Core activation — accepts credentials directly so it works
-// even when the Auto-Send tab is hidden (display:none inputs
-// are unreliable in some browsers when read via .value)
-// WebEx token and room are stored in plain localStorage (not encrypted)
-// because they are already visible in the input fields.
 async function activateAS(tok, room){
   if(!tok||!room){ toast('Enter Bot Token and Room ID.'); return; }
-  lsRawSet(LSWT, tok); lsRawSet(LSWR, room);
+  // Store in memory — doSave will encrypt and persist to JSONBin
+  wxToken = tok;
+  wxRoom  = room;
   const el=id=>document.getElementById(id);
   el('wxTok').value=tok; el('wxRoom').value=room;
   asActive=true;
   el('asStatus').className='tbox ton';
   el('asStatus').innerHTML=`Auto-send <strong>active</strong> — sends updated schedule when today\'s availability changes.`;
   toast('Auto-send activated!');
+  // Persist to JSONBin so credentials are available to all users
+  scheduleSave();
 }
 
 // Called by the Activate button — reads from DOM fields
@@ -1446,13 +1477,11 @@ function getNextWorkDay(){
 // If auto-send is active and the changed date is today, send an updated schedule.
 async function checkAvailabilityTrigger(changedDate){
   if(!asActive) return;
-  const tok=lsRaw(LSWT);
-  const room=lsRaw(LSWR);
-  if(!tok||!room) return;
+  if(!wxToken||!wxRoom) return;
   const todayKey=fmtD(new Date());
   if(changedDate===todayKey){
     toast(`🔄 Availability changed — sending updated schedule…`);
-    sendScheduleForDate(tok, room, todayKey, true);
+    sendScheduleForDate(wxToken, wxRoom, todayKey, true);
   }
 }
 
@@ -1482,8 +1511,8 @@ async function sendScheduleForDate(tok,room,dk,isUpdate){
 
 
 async function testSend(){
-  const tok=document.getElementById('wxTok').value.trim();
-  const room=document.getElementById('wxRoom').value.trim();
+  const tok  = wxToken  || document.getElementById('wxTok').value.trim();
+  const room = wxRoom   || document.getElementById('wxRoom').value.trim();
   if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
   toast('Sending…');
   await sendScheduleForDate(tok, room, fmtD(new Date()), false);

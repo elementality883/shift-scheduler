@@ -648,8 +648,8 @@ async function showApp(){
   if(ey&&!ey.value) ey.value=new Date().getFullYear();
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
-  // Restore saved auto-send credentials
-  const savedTok=await LS.get(LSWT), savedRoom=await LS.get(LSWR);
+  // Restore saved auto-send credentials (stored plain, not encrypted)
+  const savedTok=lsRaw(LSWT), savedRoom=lsRaw(LSWR);
   if(savedTok)  document.getElementById('wxTok').value=savedTok;
   if(savedRoom) document.getElementById('wxRoom').value=savedRoom;
   // Auto-generate today's schedule immediately on load
@@ -1409,9 +1409,11 @@ function copyMsg(){
 // Core activation — accepts credentials directly so it works
 // even when the Auto-Send tab is hidden (display:none inputs
 // are unreliable in some browsers when read via .value)
+// WebEx token and room are stored in plain localStorage (not encrypted)
+// because they are already visible in the input fields.
 async function activateAS(tok, room){
   if(!tok||!room){ toast('Enter Bot Token and Room ID.'); return; }
-  await LS.set(LSWT,tok); await LS.set(LSWR,room);
+  lsRawSet(LSWT, tok); lsRawSet(LSWR, room);
   const el=id=>document.getElementById(id);
   el('wxTok').value=tok; el('wxRoom').value=room;
   asActive=true;
@@ -1445,8 +1447,8 @@ function getNextWorkDay(){
 // If auto-send is active and the changed date is today, send an updated schedule.
 async function checkAvailabilityTrigger(changedDate){
   if(!asActive) return;
-  const tok=await LS.get(LSWT);
-  const room=await LS.get(LSWR);
+  const tok=lsRaw(LSWT);
+  const room=lsRaw(LSWR);
   if(!tok||!room) return;
   const todayKey=fmtD(new Date());
   if(changedDate===todayKey){

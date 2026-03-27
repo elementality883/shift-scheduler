@@ -808,10 +808,16 @@ async function connect(){
     }
 
   } else {
-    // ── FIRST-TIME SETUP MODE (admin) ────────────────────────────────────
-    const pass = document.getElementById('inpPass').value;
-    const pin  = document.getElementById('inpPin').value;
+    // ── FIRST-TIME SETUP MODE ─────────────────────────────────────────────
+    // Run the peek now (in case blur never fired) to update PIN field visibility
+    await peekBinForPin();
+
+    const pass    = document.getElementById('inpPass').value;
+    const pin     = document.getElementById('inpPin').value;
+    const pinVisible = document.getElementById('pinChangeRow').style.display !== 'none';
     if(!pass){ err.textContent='Please set a passphrase to encrypt your credentials.'; err.style.display='block'; return; }
+    // Only require PIN if the field is visible (i.e. no existing PIN in JSONBin)
+    if(pinVisible && !pin){ err.textContent='Please set an Admin PIN to protect previous weeks.'; err.style.display='block'; return; }
 
     jbKey=key; jbBin=bin;
     showOv();

@@ -710,6 +710,37 @@ async function showSetup(){
 // ═══════════════════════════════════════════════════════
 // CONNECT
 // ═══════════════════════════════════════════════════════
+
+// Called when Bin ID field loses focus on the setup screen.
+// Peeks at JSONBin (no auth needed for a public read attempt) to check
+// whether an admin PIN is already saved. If yes, hides the PIN field
+// so regular users cannot set their own — the admin's PIN will be used.
+async function peekBinForPin(){
+  const key = document.getElementById('inpKey').value.trim();
+  const bin = document.getElementById('inpBin').value.trim();
+  if(!key||!bin) return;
+  const pinRow = document.getElementById('pinChangeRow');
+  const pinInp = document.getElementById('inpPin');
+  try{
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${bin}/latest`,{
+      headers:{'X-Master-Key':key,'X-Bin-Meta':'false'}
+    });
+    if(!r.ok) return; // invalid credentials — let connect() handle the error
+    const d = await r.json();
+    if(d.pin){
+      // Admin PIN already set — hide field, clear any input
+      pinRow.style.display='none';
+      pinInp.value='';
+    } else {
+      // No PIN yet — this is the admin, show the field
+      pinRow.style.display='block';
+    }
+  }catch{
+    // Network error — show the field and let connect() decide
+    pinRow.style.display='block';
+  }
+}
+
 async function connect(){
   const key = document.getElementById('inpKey').value.trim();
   const bin = document.getElementById('inpBin').value.trim();
@@ -795,12 +826,34 @@ async function connect(){
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
-      // Store PIN in memory — doSave will encrypt and persist to JSONBin
-      currentPin = pin;
+
+      // Check if a PIN already exists in JSONBin (set by admin previously).
+      // If yes: use the existing encrypted PIN — do NOT accept the field input.
+      // If no:  this IS the admin — require and save the PIN from the field.
+      if(d.pin){
+        // Existing PIN in JSONBin — decrypt it into memory, ignore field input
+        currentPin = await decryptPin(d.pin);
+        // Note: decryptPin uses the freshly-derived cryptoKey — if it returns null
+        // it means this bin was encrypted with a different passphrase (wrong credentials)
+        if(!currentPin){
+          hideOv();
+          jbKey=null; jbBin=null; cryptoKey=null;
+          err.textContent='Could not decrypt existing data — check your passphrase.';
+          err.style.display='block'; return;
+        }
+      } else {
+        // No PIN in JSONBin yet — this is the first admin setup, PIN field is required
+        if(!pin){
+          hideOv();
+          jbKey=null; jbBin=null; cryptoKey=null;
+          err.textContent='Please set an Admin PIN to protect previous weeks.';
+          err.style.display='block'; return;
+        }
+        currentPin = pin;
+      }
 
       localOnly=false;
       hideOv();
-      // Save immediately so PIN is in JSONBin before anyone else connects
       await doSave();
       showApp();
     }catch(e){
@@ -883,6 +936,7 @@ function wireEvents(){
   on('btnLocalOnly', 'click', useLocal);
   on('inpKey',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpBin').focus(); });
   on('inpBin',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpPass').focus(); });
+  on('inpBin',       'blur',    peekBinForPin);
   on('inpPass',      'keydown', e=>{ if(e.key==='Enter') connect(); });
   on('inpCurrPin',   'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header

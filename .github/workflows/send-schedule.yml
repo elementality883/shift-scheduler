@@ -1,11 +1,11 @@
 # .github/workflows/send-schedule.yml
 #
 # Sends the shift schedule to WebEx at:
-#   08:45 JST  (morning — today's schedule)
+#   08:00 JST  (morning — today's schedule)
 #   17:00 JST  (evening — next work day's schedule)
 #
 # JST = UTC+9, so:
-#   08:45 JST = 23:45 UTC the PREVIOUS day  → cron fires Sun–Thu at 23:45 UTC
+#   08:00 JST = 23:00 UTC the PREVIOUS day  → cron fires Sun–Thu at 23:00 UTC
 #   17:00 JST = 08:00 UTC the SAME day      → cron fires Mon–Fri at 08:00 UTC
 #
 # SEND_TYPE is set explicitly in each cron trigger via a separate job,
@@ -15,8 +15,8 @@ name: Send Shift Schedule
 
 on:
   schedule:
-    # 08:45 JST = 23:45 UTC (Sun–Thu covers Mon–Fri JST mornings)
-    - cron: '30 23 * * 0,1,2,3,4'
+    # 08:00 JST = 23:00 UTC (Sun–Thu covers Mon–Fri JST mornings)
+    - cron: '0 23 * * 0,1,2,3,4'
     # 17:00 JST = 08:00 UTC (Mon–Fri)
     - cron: '0 8 * * 1,2,3,4,5'
 
@@ -58,7 +58,7 @@ jobs:
             echo "type=${{ github.event.inputs.send_type }}" >> $GITHUB_OUTPUT
           else
             # Scheduled trigger — determine by UTC hour
-            # 23:xx UTC = morning send (08:45 JST next day)
+            # 23:xx UTC = morning send (08:00 JST next day)
             # 08:xx UTC = evening send (17:00 JST same day)
             HOUR=$(date -u +%H)
             if [ "$HOUR" -ge 20 ]; then

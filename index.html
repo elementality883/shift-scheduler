@@ -256,8 +256,11 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
     <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
 
-    <div class="field-lbl" style="margin-top:10px">Past Week PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(optional — locks editing of previous weeks)</span></div>
-    <input class="setup-inp" type="password" id="inpPin" placeholder="Leave blank to disable lock…" style="margin-top:4px">
+    <!-- PIN field: shown on first-time setup AND when reconfiguring -->
+    <div id="pinChangeRow">
+      <div class="field-lbl" style="margin-top:10px">Admin PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(locks editing of previous weeks for all users)</span></div>
+      <input class="setup-inp" type="password" id="inpPin" placeholder="Choose a PIN…" style="margin-top:4px">
+    </div>
 
     <!-- Shown only when reconfiguring and a PIN is already set -->
     <div id="currPinRow" style="display:none">
@@ -697,16 +700,11 @@ async function showSetup(){
   document.getElementById('inpPin').value='';
   document.getElementById('inpCurrPin').value='';
   document.getElementById('inpPass').placeholder='New passphrase (leave blank to keep current)';
+  document.getElementById('inpPin').placeholder='Enter new PIN to change…';
 
-  // Only show PIN verification row if a PIN is currently set
-  const currPinRow = document.getElementById('currPinRow');
-  if(currentPin){
-    currPinRow.style.display='block';
-    document.getElementById('inpPin').placeholder='New PIN to replace, or leave blank to remove';
-  } else {
-    currPinRow.style.display='none';
-    document.getElementById('inpPin').placeholder='Leave blank to disable lock…';
-  }
+  // Always show PIN change row on reconfig; show verify row since PIN is mandatory
+  document.getElementById('pinChangeRow').style.display='block';
+  document.getElementById('currPinRow').style.display='block';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -754,18 +752,22 @@ async function connect(){
         lsRawSet(LS_SALT, buf2hex(salt));
         cryptoKey = await deriveKey(newPass, salt);
       }
-      // If no new passphrase, cryptoKey stays as-is (already set from the unlock step)
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
 
-      // PIN: update in-memory currentPin — doSave will encrypt and persist to JSONBin
+      // PIN: required — must not be blank on reconfig
       const newPin = document.getElementById('inpPin').value;
-      currentPin = newPin || null;
+      if(!newPin){
+        hideOv();
+        err.textContent='PIN is required — please enter a new PIN.';
+        err.style.display='block'; return;
+      }
+      currentPin = newPin;
 
       localOnly=false;
       hideOv();
-      pastWeekUnlocked=false; // re-lock past weeks after any settings change
+      pastWeekUnlocked=false;
       toast('✅ Settings saved.');
       showApp();
     }catch(e){
@@ -775,9 +777,11 @@ async function connect(){
     }
 
   } else {
-    // ── FIRST-TIME SETUP MODE ────────────────────────────
+    // ── FIRST-TIME SETUP MODE (admin) ────────────────────────────────────
     const pass = document.getElementById('inpPass').value;
+    const pin  = document.getElementById('inpPin').value;
     if(!pass){ err.textContent='Please set a passphrase to encrypt your credentials.'; err.style.display='block'; return; }
+    if(!pin){  err.textContent='Please set an Admin PIN to protect previous weeks.';   err.style.display='block'; return; }
 
     jbKey=key; jbBin=bin;
     showOv();
@@ -791,11 +795,13 @@ async function connect(){
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
-      // Set PIN in memory — doSave will encrypt and persist it to JSONBin
-      currentPin = document.getElementById('inpPin')?.value || null;
+      // Store PIN in memory — doSave will encrypt and persist to JSONBin
+      currentPin = pin;
 
       localOnly=false;
       hideOv();
+      // Save immediately so PIN is in JSONBin before anyone else connects
+      await doSave();
       showApp();
     }catch(e){
       hideOv();

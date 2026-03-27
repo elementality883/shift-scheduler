@@ -812,7 +812,6 @@ async function connect(){
     const pass = document.getElementById('inpPass').value;
     const pin  = document.getElementById('inpPin').value;
     if(!pass){ err.textContent='Please set a passphrase to encrypt your credentials.'; err.style.display='block'; return; }
-    if(!pin){  err.textContent='Please set an Admin PIN to protect previous weeks.';   err.style.display='block'; return; }
 
     jbKey=key; jbBin=bin;
     showOv();

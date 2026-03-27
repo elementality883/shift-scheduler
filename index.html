@@ -333,6 +333,36 @@ select option{background:#1e2330;}
       <p class="errtxt" id="bulkErr"></p>
       <button class="btn btn-big" id="btnBulkApply" style="margin-top:14px">✅ Apply to All Selected Days</button>
     </div>
+
+    <!-- EXPORT CSV -->
+    <div class="card">
+      <div class="ct">Export Availability as CSV</div>
+      <p class="note" style="margin-top:0;margin-bottom:14px">Download a monthly availability report showing each team member's status for every working day. Weekends are excluded.</p>
+      <div class="two-col">
+        <div>
+          <div class="field-lbl">Month</div>
+          <select id="exportMonth">
+            <option value="0">January</option>
+            <option value="1">February</option>
+            <option value="2">March</option>
+            <option value="3">April</option>
+            <option value="4">May</option>
+            <option value="5">June</option>
+            <option value="6">July</option>
+            <option value="7">August</option>
+            <option value="8">September</option>
+            <option value="9">October</option>
+            <option value="10">November</option>
+            <option value="11">December</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-lbl">Year</div>
+          <input type="text" id="exportYear" maxlength="4" placeholder="2026" style="width:100%">
+        </div>
+      </div>
+      <button class="btn btn-big" id="btnExportCsv" style="margin-top:14px">⬇ Download CSV</button>
+    </div>
   </div>
 
   <!-- SCHEDULE -->
@@ -566,6 +596,9 @@ async function showApp(){
   const bf=document.getElementById('bulkFrom'), bt=document.getElementById('bulkTo');
   if(bf&&!bf.value) bf.value=todayStr;
   if(bt&&!bt.value) bt.value=todayStr;
+  const em=document.getElementById('exportMonth'), ey=document.getElementById('exportYear');
+  if(em) em.value=new Date().getMonth();
+  if(ey&&!ey.value) ey.value=new Date().getFullYear();
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
   // Restore saved auto-send credentials
@@ -699,6 +732,7 @@ function wireEvents(){
   on('cpBtn',        'click', copyMsg);
   // Auto-send
   on('btnBulkApply', 'click', applyBulk);
+  on('btnExportCsv', 'click', exportCsv);
   on('btnASStop',    'click', stopAS);
   on('btnASTest',    'click', testSend);
 }
@@ -863,6 +897,91 @@ function applyBulk(){
 
   const label = status==='pto'?'PTO':status==='late'?'Late Shift':status==='exclude'?'Exclude':'Available';
   toast(`✅ Set ${selected.length} ${selected.length===1?'person':'people'} to ${label} for ${daysChanged} day${daysChanged===1?'':'s'}`);
+}
+
+// ═══════════════════════════════════════════════════════
+// EXPORT CSV
+// ═══════════════════════════════════════════════════════
+function exportCsv(){
+  const monthEl = document.getElementById('exportMonth');
+  const yearEl  = document.getElementById('exportYear');
+  const month   = parseInt(monthEl.value, 10);      // 0-based
+  const year    = parseInt(yearEl.value, 10);
+
+  if(isNaN(year) || year < 2000 || year > 2100){
+    toast('⚠ Enter a valid year (e.g. 2026)');
+    return;
+  }
+  if(!team.length){
+    toast('⚠ No team members to export.');
+    return;
+  }
+
+  // Collect all working days (Mon–Fri) in the month
+  const workDays = [];
+  const d = new Date(year, month, 1);
+  while(d.getMonth() === month){
+    const day = d.getDay();
+    if(day !== 0 && day !== 6) workDays.push(fmtD(new Date(d)));
+    d.setDate(d.getDate() + 1);
+  }
+
+  if(!workDays.length){
+    toast('⚠ No working days found for that month.');
+    return;
+  }
+
+  // Status label mapping
+  const statusLabel = {
+    available: 'Available',
+    late:      'Late Shift',
+    pto:       'PTO',
+    exclude:   'Exclude',
+  };
+
+  // CSV escape helper
+  const esc = v => `"${String(v).replace(/"/g, '""')}"`;
+
+  // Header row: Name, then each working day as MM/DD/YYYY
+  const header = [
+    'Name',
+    ...workDays.map(dk => {
+      const [y,m,day] = dk.split('-');
+      return `${parseInt(m)}/${parseInt(day)}/${y}`;
+    })
+  ].map(esc).join(',');
+
+  // One row per team member
+  const rows = team.map(name => {
+    const cells = [name, ...workDays.map(dk => statusLabel[getSt(name, dk)] || 'Available')];
+    return cells.map(esc).join(',');
+  });
+
+  // Summary rows — count per status per day
+  const summaryAvail   = ['Available Count',   ...workDays.map(dk => team.filter(n=>getSt(n,dk)==='available').length)].map(esc).join(',');
+  const summaryLate    = ['Late Shift Count',   ...workDays.map(dk => team.filter(n=>getSt(n,dk)==='late').length)].map(esc).join(',');
+  const summaryPto     = ['PTO Count',          ...workDays.map(dk => team.filter(n=>getSt(n,dk)==='pto').length)].map(esc).join(',');
+  const summaryExclude = ['Exclude Count',      ...workDays.map(dk => team.filter(n=>getSt(n,dk)==='exclude').length)].map(esc).join(',');
+
+  const csv = [
+    header,
+    ...rows,
+    '', // blank separator row
+    summaryAvail,
+    summaryLate,
+    summaryPto,
+    summaryExclude,
+  ].join('\r\n');
+
+  // Trigger download
+  const monthName = monthEl.options[monthEl.selectedIndex].text;
+  const filename  = `shift-availability-${monthName}-${year}.csv`;
+  const blob      = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url       = URL.createObjectURL(blob);
+  const a         = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  toast(`⬇ Downloaded ${filename}`);
 }
 
 // ═══════════════════════════════════════════════════════

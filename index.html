@@ -133,7 +133,10 @@ select option{background:#1e2330;}
 .badge{border-radius:5px;padding:2px 8px;font-size:0.73rem;}
 .bn{background:rgba(0,229,160,0.1);color:var(--accent);border:1px solid rgba(0,229,160,0.2);}
 .bl{background:rgba(251,191,36,0.1);color:var(--late);border:1px solid rgba(251,191,36,0.25);}
-.ltag{font-family:'Syne',sans-serif;font-size:0.55rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:4px;padding:2px 6px;margin-left:auto;}
+.slotrow.past{opacity:0.45;}
+.slotrow.past .stime{color:var(--muted);}
+.past-tag{font-family:'Syne',sans-serif;font-size:0.53rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);background:rgba(107,114,128,0.1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:auto;}
+letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.2);border-radius:4px;padding:2px 6px;margin-left:auto;}
 .sched-hd{font-family:'Syne',sans-serif;font-weight:800;font-size:1.08rem;margin-bottom:11px;max-width:780px;margin-left:auto;margin-right:auto;}
 .msgbox{background:#0a0c11;border:1px solid var(--border);border-radius:10px;padding:14px 14px 10px;font-size:0.76rem;line-height:1.75;color:#c8cdd8;white-space:pre-wrap;font-family:'DM Mono',monospace;position:relative;}
 .cpbtn{position:absolute;top:8px;right:8px;background:var(--border);border:none;border-radius:6px;padding:4px 8px;font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted);cursor:pointer;transition:all 0.15s;}
@@ -462,14 +465,15 @@ let pendingPinAction=null;  // callback to run after successful PIN entry
 
 // lateOnly:true  = ONLY the designated late-shift person is assigned here
 // lateOnly:false = normal random pool; late-shift person is EXCLUDED from these slots
+// startHour = the hour at which this slot begins — locked once this hour is reached
 const SLOTS=[
-  {time:'09:00 – 10:00',lateOnly:false},
-  {time:'10:00 – 11:00',lateOnly:false},
-  {time:'11:00 – 12:00',lateOnly:false},
-  {time:'12:00 – 13:00',lateOnly:true },
-  {time:'13:00 – 14:00',lateOnly:false},
-  {time:'14:00 – 15:00',lateOnly:true },
-  {time:'16:00 – 17:00',lateOnly:false},
+  {time:'09:00 – 10:00',lateOnly:false,startHour:9},
+  {time:'10:00 – 11:00',lateOnly:false,startHour:10},
+  {time:'11:00 – 12:00',lateOnly:false,startHour:11},
+  {time:'12:00 – 13:00',lateOnly:true, startHour:12},
+  {time:'13:00 – 14:00',lateOnly:false,startHour:13},
+  {time:'14:00 – 15:00',lateOnly:true, startHour:14},
+  {time:'16:00 – 17:00',lateOnly:false,startHour:16},
 ];
 
 // ═══════════════════════════════════════════════════════
@@ -963,26 +967,20 @@ async function setAv(name,dk,sel){
 }
 
 function applyLinkedRules(changedName, dk, newStatus){
+  let anyApplied = false;
   LINKED_RULES.forEach(rule=>{
     const [triggerName, triggerStatus] = rule.trigger;
     const [linkedName,  linkedStatus ] = rule.linked;
     if(changedName===triggerName && newStatus===triggerStatus){
-      // Only apply if the linked person exists in the team
       if(!team.includes(linkedName)) return;
       if(!avail[linkedName]) avail[linkedName]={};
       avail[linkedName][dk] = linkedStatus;
-      // Update the DOM select if it's visible
-      const linkedSel = document.querySelector(
-        `select[data-name="${linkedName.replace(/"/g,'&quot;')}"][data-date="${dk}"]`
-      );
-      if(linkedSel){
-        linkedSel.value = linkedStatus;
-        const lc=linkedStatus==='pto'?'spto':linkedStatus==='late'?'slate':linkedStatus==='exclude'?'sexclude':'sa';
-        linkedSel.className='asel '+lc;
-      }
+      anyApplied = true;
       toast(`🔗 ${linkedName} automatically set to ${linkedStatus} (linked to ${changedName}'s PTO)`);
     }
   });
+  // Re-render the table so all linked changes are immediately visible
+  if(anyApplied) renderAvail();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1174,7 +1172,19 @@ function exportCsv(){
 // ═══════════════════════════════════════════════════════
 function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
-function buildSched(dk){
+// Returns an array of {slotIndex, assigned} for slots whose start hour has been reached today.
+// Only applies when dk === today. Used to lock past slots on re-randomise.
+function getLockedSlots(dk){
+  const todayKey = fmtD(new Date());
+  if(dk !== todayKey) return []; // only lock slots for today
+  const nowHour  = new Date().getHours();
+  return SLOTS
+    .map((s,i)=>({i,s}))
+    .filter(({s})=> nowHour >= s.startHour)
+    .map(({i,s})=>({ index:i, slot:s }));
+}
+
+function buildSched(dk, lockedSlots=[]){
   // Status groups for this date
   const lateMembers  = team.filter(n=>getSt(n,dk)==='late');
   // Available for random slots = not pto, not excluded, not late-shift
@@ -1186,34 +1196,36 @@ function buildSched(dk){
   const lateShuf = shuffle(lateMembers);
   let ri=0, li=0;
 
-  return SLOTS.map(s=>{
+  // Build a quick lookup of locked slot index → existing assignment
+  const lockedMap = {};
+  lockedSlots.forEach(({index, slot})=>{ lockedMap[index]=slot; });
+
+  return SLOTS.map((s,i)=>{
+    // If this slot is locked (already past), return it unchanged
+    if(lockedMap[i]) return lockedMap[i];
+
     if(s.lateOnly){
       if(lateMembers.length===0){
-        // No late person assigned — fill with 2 from random pool with a warning
         const p=[];
         const seen=new Set();
         while(p.length<2){
           const person=randShuf[ri%randShuf.length]; ri++;
           if(!seen.has(person)||randShuf.length===1){p.push(person);seen.add(person);}
         }
-        return{...s,assigned:p,hasLate:false,noLate:true};
+        return{...s,assigned:p,hasLate:false,noLate:true,past:false};
       }
-      // Late shift person + 1 random from the available pool
       const latePerson=lateShuf[li%lateShuf.length]; li++;
-      // Pick a random person who isn't the late shift person
       let randPerson=randShuf[ri%randShuf.length]; ri++;
       if(randPerson===latePerson){randPerson=randShuf[ri%randShuf.length]; ri++;}
-      return{...s,assigned:[latePerson,randPerson],hasLate:true,noLate:false};
+      return{...s,assigned:[latePerson,randPerson],hasLate:true,noLate:false,past:false};
     }else{
-      // Normal slot — pick 2 from random pool only (late members never appear here)
       const p=[];
       const seen=new Set();
       while(p.length<2){
         const person=randShuf[ri%randShuf.length]; ri++;
-        // Avoid immediate duplicate in same slot
         if(!seen.has(person)||randShuf.length===1){p.push(person);seen.add(person);}
       }
-      return{...s,assigned:p,hasLate:false,noLate:false};
+      return{...s,assigned:p,hasLate:false,noLate:false,past:false};
     }
   });
 }
@@ -1223,8 +1235,18 @@ function generate(td){
   const err=document.getElementById('schedErr');
   if(err) err.style.display='none';
   if(!dk){if(err){err.textContent='Select a date.';err.style.display='block';}return null;}
-  const result=buildSched(dk);
+
+  // For today, lock any slots whose end hour has already passed
+  const lockedSlots = getLockedSlots(dk);
+  const lockedMap   = {};
+  lockedSlots.forEach(({index,slot})=>{ lockedMap[index]=slot; });
+
+  const result=buildSched(dk, lockedSlots.map(({index,slot})=>({index,slot})));
   if(!result){if(err){err.textContent='Not enough available members — need at least 2 people set to Available (not Late Shift, PTO, or Excluded).';err.style.display='block';}return null;}
+
+  // Tag past slots so renderSched can style them
+  SLOTS.forEach((s,i)=>{ if(lockedMap[i]) result[i].past=true; });
+
   if(!td) renderSched(result,dk);
   return{result,dk};
 }
@@ -1238,9 +1260,11 @@ function renderSched(result,dk){
   document.getElementById('schedGrid').innerHTML=result.map((s,i)=>{
     const badges=s.assigned.map(n=>`<span class="badge ${isLate(n,dk)?'bl':'bn'}">${n}${isLate(n,dk)?' 🕐':''}</span>`).join('');
     let tag='';
-    if(s.lateOnly && s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
-    if(s.lateOnly && s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
-    return`<div class="slotrow" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
+    if(s.past)                   tag=`<span class="past-tag">Past</span>`;
+    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
+    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
+    const pastClass = s.past ? ' past' : '';
+    return`<div class="slotrow${pastClass}" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
   }).join('');
   const msg=buildMsg(result,hd,dk);
   document.getElementById('msgTxt').textContent=msg;

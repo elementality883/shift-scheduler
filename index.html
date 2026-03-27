@@ -297,16 +297,12 @@ select option{background:#1e2330;}
   <!-- AUTO-SEND -->
   <div class="tab-panel" id="tab-autosend">
     <div class="card">
-      <div class="ct">Browser Auto-Send</div>
+      <div class="ct">WebEx Auto-Send</div>
       <div style="display:grid;gap:10px">
         <div><div class="fl">WebEx Bot Token</div>
           <input type="text" id="wxTok" placeholder="Bearer token from developer.webex.com"></div>
         <div><div class="fl">WebEx Room / Space ID</div>
           <input type="text" id="wxRoom" placeholder="Room ID"></div>
-        <div class="two-col">
-          <div><div class="fl">Morning Send</div><input type="text" id="wxT1" value="08:45"></div>
-          <div><div class="fl">Evening Send</div><input type="text" id="wxT2" value="17:00"></div>
-        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
         <button class="btn" id="btnASStart">▶ Activate</button>
@@ -314,8 +310,7 @@ select option{background:#1e2330;}
         <button class="btn btn-sec" style="margin-left:auto" id="btnASTest">📤 Test Now</button>
       </div>
       <div class="tbox toff" id="asStatus">Auto-send is <strong>inactive</strong>.</div>
-      <div class="nfire" id="nFire"></div>
-      <p class="note">Tab must stay open for browser auto-send to work.</p>
+      <p class="note" style="margin-top:10px">When active, any availability change made for <strong>today</strong> will automatically send an updated schedule to your WebEx room.</p>
     </div>
   </div>
 
@@ -332,11 +327,9 @@ const LSB  = 'sched_jb_bin';
 const LSD  = 'sched_local';
 const LSWT = 'sched_wx_tok';
 const LSWR = 'sched_wx_room';
-const LSW1 = 'sched_wx_t1';
-const LSW2 = 'sched_wx_t2';
 
 let team=[], avail={}, jbKey=null, jbBin=null, localOnly=false;
-let saveTimer=null, wkStart=getMonday(new Date()), asInterval=null, sentKeys={};
+let saveTimer=null, wkStart=getMonday(new Date()), asActive=false;
 
 // lateOnly:true  = ONLY the designated late-shift person is assigned here
 // lateOnly:false = normal random pool; late-shift person is EXCLUDED from these slots
@@ -414,18 +407,12 @@ function showApp(){
   setSyncState(localOnly?'local':'idle');
   // Restore saved auto-send credentials
   const savedTok=LS.get(LSWT), savedRoom=LS.get(LSWR);
-  const savedT1=LS.get(LSW1),  savedT2=LS.get(LSW2);
   if(savedTok)  document.getElementById('wxTok').value=savedTok;
   if(savedRoom) document.getElementById('wxRoom').value=savedRoom;
-  if(savedT1)   document.getElementById('wxT1').value=savedT1;
-  if(savedT2)   document.getElementById('wxT2').value=savedT2;
   // Auto-generate today's schedule immediately on load
   generate();
-  // Auto-activate auto-send if credentials are already saved —
-  // pass values directly to avoid reading from hidden DOM inputs
-  if(savedTok && savedRoom){
-    activateAS(savedTok, savedRoom, savedT1||'08:45', savedT2||'17:00');
-  }
+  // Auto-activate auto-send if credentials are already saved
+  if(savedTok && savedRoom){ activateAS(savedTok, savedRoom); }
 }
 
 function showSetup(){
@@ -724,30 +711,14 @@ function copyMsg(){
 // Core activation — accepts credentials directly so it works
 // even when the Auto-Send tab is hidden (display:none inputs
 // are unreliable in some browsers when read via .value)
-function activateAS(tok, room, t1, t2){
+function activateAS(tok, room){
   if(!tok||!room){ toast('Enter Bot Token and Room ID.'); return; }
-  // Persist so they survive reload
   LS.set(LSWT,tok); LS.set(LSWR,room);
-  LS.set(LSW1,t1);  LS.set(LSW2,t2);
-  // Sync values back into the DOM fields
   const el=id=>document.getElementById(id);
   el('wxTok').value=tok; el('wxRoom').value=room;
-  el('wxT1').value=t1;   el('wxT2').value=t2;
-
-  stopAS();
-  asInterval=setInterval(()=>{
-    const now=new Date();
-    const hhmm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    const dk=fmtD(now);
-    [t1,t2].forEach(tgt=>{
-      const k=`${dk}_${tgt}`;
-      if(hhmm===tgt&&!sentKeys[k]){ sentKeys[k]=true; sendTomorrow(tok,room); }
-    });
-    updNfire([t1,t2]);
-  },10000);
+  asActive=true;
   el('asStatus').className='tbox ton';
-  el('asStatus').innerHTML=`Auto-send <strong>active</strong> — fires at <strong>${t1}</strong> &amp; <strong>${t2}</strong>.`;
-  updNfire([t1,t2]);
+  el('asStatus').innerHTML=`Auto-send <strong>active</strong> — sends updated schedule when today\'s availability changes.`;
   toast('Auto-send activated!');
 }
 
@@ -755,22 +726,13 @@ function activateAS(tok, room, t1, t2){
 function startAS(){
   const tok=document.getElementById('wxTok').value.trim();
   const room=document.getElementById('wxRoom').value.trim();
-  const t1=document.getElementById('wxT1').value.trim()||'08:45';
-  const t2=document.getElementById('wxT2').value.trim()||'17:00';
-  activateAS(tok, room, t1, t2);
+  activateAS(tok, room);
 }
 
 function stopAS(){
-  if(asInterval) clearInterval(asInterval); asInterval=null;
+  asActive=false;
   document.getElementById('asStatus').className='tbox toff';
   document.getElementById('asStatus').innerHTML='Auto-send is <strong>inactive</strong>.';
-  document.getElementById('nFire').textContent='';
-}
-
-function updNfire(times){
-  const now=new Date();let next=null;
-  times.forEach(t=>{const[h,m]=t.split(':').map(Number);const c=new Date(now);c.setHours(h,m,0,0);if(c<=now)c.setDate(c.getDate()+1);if(!next||c<next)next=c;});
-  if(next) document.getElementById('nFire').textContent=`Next send: ${next.toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}`;
 }
 
 // Returns the next work day date string (Mon–Fri only).
@@ -782,21 +744,17 @@ function getNextWorkDay(){
 }
 
 // Called after every successful save when an availability cell was changed.
-// If auto-send is active and the changed date is today or the next work day,
-// regenerate and post an updated message to WebEx.
+// If auto-send is active and the changed date is today, send an updated schedule.
 function checkAvailabilityTrigger(changedDate){
-  if(!asInterval) return;
-  const tok=document.getElementById('wxTok').value.trim();
-  const room=document.getElementById('wxRoom').value.trim();
+  if(!asActive) return;
+  const tok=LS.get(LSWT);
+  const room=LS.get(LSWR);
   if(!tok||!room) return;
 
   const todayKey=fmtD(new Date());
-  const nextKey=getNextWorkDay();
-
-  if(changedDate===todayKey||changedDate===nextKey){
-    const label=changedDate===todayKey?"today's":"next work day's";
-    toast(`🔄 Availability changed — resending ${label} schedule…`);
-    sendScheduleForDate(tok,room,changedDate,true);
+  if(changedDate===todayKey){
+    toast(`🔄 Availability changed — sending updated schedule…`);
+    sendScheduleForDate(tok, room, todayKey, true);
   }
 }
 
@@ -829,7 +787,8 @@ async function testSend(){
   const tok=document.getElementById('wxTok').value.trim();
   const room=document.getElementById('wxRoom').value.trim();
   if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
-  toast('Sending…'); await sendTomorrow(tok,room);
+  toast('Sending…');
+  await sendScheduleForDate(tok, room, fmtD(new Date()), false);
 }
 
 // ═══════════════════════════════════════════════════════

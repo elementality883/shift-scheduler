@@ -1172,19 +1172,19 @@ function exportCsv(){
 // ═══════════════════════════════════════════════════════
 function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
-// Returns an array of {slotIndex, assigned} for slots whose start hour has been reached today.
-// Only applies when dk === today. Used to lock past slots on re-randomise.
-function getLockedSlots(dk){
+// Stores the last fully rendered schedule result so re-randomise can lock past slots
+let lastSchedResult = null;
+let lastSchedDk     = null;
+
+// Returns indices of slots that should be locked (start hour reached for today)
+function getLockedIndices(dk){
   const todayKey = fmtD(new Date());
-  if(dk !== todayKey) return []; // only lock slots for today
-  const nowHour  = new Date().getHours();
-  return SLOTS
-    .map((s,i)=>({i,s}))
-    .filter(({s})=> nowHour >= s.startHour)
-    .map(({i,s})=>({ index:i, slot:s }));
+  if(dk !== todayKey) return [];
+  const nowHour = new Date().getHours();
+  return SLOTS.map((s,i)=>i).filter(i => nowHour >= SLOTS[i].startHour);
 }
 
-function buildSched(dk, lockedSlots=[]){
+function buildSched(dk, lockedSlotResults=[]){
   // Status groups for this date
   const lateMembers  = team.filter(n=>getSt(n,dk)==='late');
   // Available for random slots = not pto, not excluded, not late-shift
@@ -1196,13 +1196,10 @@ function buildSched(dk, lockedSlots=[]){
   const lateShuf = shuffle(lateMembers);
   let ri=0, li=0;
 
-  // Build a quick lookup of locked slot index → existing assignment
-  const lockedMap = {};
-  lockedSlots.forEach(({index, slot})=>{ lockedMap[index]=slot; });
-
+  // lockedSlotResults is a sparse array: index → previously generated slot object (has .assigned)
   return SLOTS.map((s,i)=>{
-    // If this slot is locked (already past), return it unchanged
-    if(lockedMap[i]) return lockedMap[i];
+    // If this slot is locked and we have a real previous result for it, preserve it
+    if(lockedSlotResults[i]) return { ...lockedSlotResults[i], past:true };
 
     if(s.lateOnly){
       if(lateMembers.length===0){
@@ -1236,16 +1233,21 @@ function generate(td){
   if(err) err.style.display='none';
   if(!dk){if(err){err.textContent='Select a date.';err.style.display='block';}return null;}
 
-  // For today, lock any slots whose end hour has already passed
-  const lockedSlots = getLockedSlots(dk);
-  const lockedMap   = {};
-  lockedSlots.forEach(({index,slot})=>{ lockedMap[index]=slot; });
+  // Build locked slot map: for re-randomise on today, preserve any already-generated past slots
+  const lockedIndices = getLockedIndices(dk);
+  const lockedSlotResults = [];
+  if(lockedIndices.length && lastSchedResult && lastSchedDk===dk){
+    // We have a previous result for this date — lock the past slots from it
+    lockedIndices.forEach(i=>{ lockedSlotResults[i] = lastSchedResult[i]; });
+  }
+  // If no previous result exists (first generate), all slots randomise freely
 
-  const result=buildSched(dk, lockedSlots.map(({index,slot})=>({index,slot})));
+  const result=buildSched(dk, lockedSlotResults);
   if(!result){if(err){err.textContent='Not enough available members — need at least 2 people set to Available (not Late Shift, PTO, or Excluded).';err.style.display='block';}return null;}
 
-  // Tag past slots so renderSched can style them
-  SLOTS.forEach((s,i)=>{ if(lockedMap[i]) result[i].past=true; });
+  // Store for future re-randomise calls
+  lastSchedResult = result;
+  lastSchedDk     = dk;
 
   if(!td) renderSched(result,dk);
   return{result,dk};

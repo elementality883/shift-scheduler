@@ -421,8 +421,11 @@ function showApp(){
   if(savedT2)   document.getElementById('wxT2').value=savedT2;
   // Auto-generate today's schedule immediately on load
   generate();
-  // Auto-activate auto-send if credentials are already saved
-  if(savedTok && savedRoom){ startAS(); }
+  // Auto-activate auto-send if credentials are already saved —
+  // pass values directly to avoid reading from hidden DOM inputs
+  if(savedTok && savedRoom){
+    activateAS(savedTok, savedRoom, savedT1||'08:45', savedT2||'17:00');
+  }
 }
 
 function showSetup(){
@@ -717,26 +720,44 @@ function copyMsg(){
 // ═══════════════════════════════════════════════════════
 // AUTO-SEND
 // ═══════════════════════════════════════════════════════
-function startAS(){
-  const tok=document.getElementById('wxTok').value.trim();
-  const room=document.getElementById('wxRoom').value.trim();
-  const t1=document.getElementById('wxT1').value.trim();
-  const t2=document.getElementById('wxT2').value.trim();
-  if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
-  // Persist credentials so they survive page reload
+
+// Core activation — accepts credentials directly so it works
+// even when the Auto-Send tab is hidden (display:none inputs
+// are unreliable in some browsers when read via .value)
+function activateAS(tok, room, t1, t2){
+  if(!tok||!room){ toast('Enter Bot Token and Room ID.'); return; }
+  // Persist so they survive reload
   LS.set(LSWT,tok); LS.set(LSWR,room);
   LS.set(LSW1,t1);  LS.set(LSW2,t2);
+  // Sync values back into the DOM fields
+  const el=id=>document.getElementById(id);
+  el('wxTok').value=tok; el('wxRoom').value=room;
+  el('wxT1').value=t1;   el('wxT2').value=t2;
+
   stopAS();
   asInterval=setInterval(()=>{
     const now=new Date();
     const hhmm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     const dk=fmtD(now);
-    [t1,t2].forEach(tgt=>{const k=`${dk}_${tgt}`;if(hhmm===tgt&&!sentKeys[k]){sentKeys[k]=true;sendTomorrow(tok,room);}});
+    [t1,t2].forEach(tgt=>{
+      const k=`${dk}_${tgt}`;
+      if(hhmm===tgt&&!sentKeys[k]){ sentKeys[k]=true; sendTomorrow(tok,room); }
+    });
     updNfire([t1,t2]);
   },10000);
-  document.getElementById('asStatus').className='tbox ton';
-  document.getElementById('asStatus').innerHTML=`Auto-send <strong>active</strong> — fires at <strong>${t1}</strong> &amp; <strong>${t2}</strong>.`;
-  updNfire([t1,t2]); toast('Auto-send activated!');
+  el('asStatus').className='tbox ton';
+  el('asStatus').innerHTML=`Auto-send <strong>active</strong> — fires at <strong>${t1}</strong> &amp; <strong>${t2}</strong>.`;
+  updNfire([t1,t2]);
+  toast('Auto-send activated!');
+}
+
+// Called by the Activate button — reads from DOM fields
+function startAS(){
+  const tok=document.getElementById('wxTok').value.trim();
+  const room=document.getElementById('wxRoom').value.trim();
+  const t1=document.getElementById('wxT1').value.trim()||'08:45';
+  const t2=document.getElementById('wxT2').value.trim()||'17:00';
+  activateAS(tok, room, t1, t2);
 }
 
 function stopAS(){

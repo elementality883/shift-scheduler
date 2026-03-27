@@ -256,19 +256,14 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
     <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
 
-    <!-- Shown only when reconfiguring — confirm current passphrase before changing -->
-    <div id="currPassRow" style="display:none">
-      <div class="field-lbl" style="margin-top:10px">Current Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(required to save changes)</span></div>
-      <input class="setup-inp" type="password" id="inpCurrPass" placeholder="Enter your current passphrase…" style="margin-top:4px">
-    </div>
-
     <div class="field-lbl" style="margin-top:10px">Past Week PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(optional — locks editing of previous weeks)</span></div>
     <input class="setup-inp" type="password" id="inpPin" placeholder="Leave blank to disable lock…" style="margin-top:4px">
 
     <!-- Shown only when reconfiguring and a PIN is already set -->
     <div id="currPinRow" style="display:none">
-      <div class="field-lbl" style="margin-top:10px">Current PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(required to change or remove PIN)</span></div>
-      <input class="setup-inp" type="password" id="inpCurrPin" placeholder="Enter your current PIN…" style="margin-top:4px">
+      <div class="hr" style="margin-top:14px"></div>
+      <div class="field-lbl" style="margin-top:4px">Verify Current PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(required to change passphrase or PIN)</span></div>
+      <input class="setup-inp" type="password" id="inpCurrPin" placeholder="Enter your current PIN to unlock changes…" style="margin-top:4px">
     </div>
 
     <div class="errtxt" id="setupErr"></div>
@@ -666,14 +661,14 @@ async function showSetup(){
   if(jbKey) document.getElementById('inpKey').value=jbKey;
   if(jbBin) document.getElementById('inpBin').value=jbBin;
 
-  // Reconfiguration mode — show confirmation fields
-  const storedPin = await LS.get(LSPIN);
-
-  // Current passphrase confirmation — always required when reconfiguring
-  document.getElementById('currPassRow').style.display='block';
+  // Clear sensitive fields
+  document.getElementById('inpPass').value='';
+  document.getElementById('inpPin').value='';
+  document.getElementById('inpCurrPin').value='';
   document.getElementById('inpPass').placeholder='New passphrase (leave blank to keep current)';
 
-  // Current PIN confirmation — only shown if a PIN is already set
+  // Only show PIN verification row if a PIN is already set
+  const storedPin = await LS.get(LSPIN);
   const currPinRow = document.getElementById('currPinRow');
   if(storedPin){
     currPinRow.style.display='block';
@@ -682,89 +677,72 @@ async function showSetup(){
     currPinRow.style.display='none';
     document.getElementById('inpPin').placeholder='Leave blank to disable lock…';
   }
-
-  // Clear confirmation fields
-  document.getElementById('inpCurrPass').value='';
-  document.getElementById('inpCurrPin').value='';
 }
 
 // ═══════════════════════════════════════════════════════
 // CONNECT
 // ═══════════════════════════════════════════════════════
 async function connect(){
-  const key  = document.getElementById('inpKey').value.trim();
-  const bin  = document.getElementById('inpBin').value.trim();
-  const err  = document.getElementById('setupErr');
+  const key = document.getElementById('inpKey').value.trim();
+  const bin = document.getElementById('inpBin').value.trim();
+  const err = document.getElementById('setupErr');
   err.style.display='none';
 
   if(!key||!bin){ err.textContent='Please fill in the API Key and Bin ID.'; err.style.display='block'; return; }
 
-  const isReconfig = document.getElementById('currPassRow').style.display !== 'none';
+  const isReconfig = document.getElementById('currPinRow').style.display !== 'none'
+                  || !!lsRaw(LS_SALT); // any existing setup = reconfig
 
   if(isReconfig){
     // ── RECONFIGURATION MODE ─────────────────────────────
-    // Must confirm current passphrase before any changes are saved
-    const currPassEl  = document.getElementById('inpCurrPass');
-    const currPass    = currPassEl.value;
-    if(!currPass){ err.textContent='Enter your current passphrase to confirm changes.'; err.style.display='block'; return; }
+    const storedPin = await LS.get(LSPIN);
 
-    // Verify current passphrase by attempting to re-derive the key and decrypt a known value
-    showOv();
-    try{
-      const saltHex   = lsRaw(LS_SALT);
-      if(!saltHex) throw new Error('no salt');
-      const testKey   = await deriveKey(currPass, hex2buf(saltHex));
-      // Temporarily use this key to decrypt the stored API key as a check
-      const savedCryptoKey = cryptoKey;
-      cryptoKey = testKey;
-      const check = await LS.get(LSK);
-      cryptoKey = savedCryptoKey;
-      if(!check) throw new Error('wrong passphrase');
-    }catch{
-      hideOv();
-      err.textContent='Current passphrase is incorrect.';
-      err.style.display='block';
-      document.getElementById('inpCurrPass').value='';
-      return;
-    }
-
-    // Verify current PIN if one is set and PIN fields are visible
-    const storedPin   = await LS.get(LSPIN);
-    const currPinRow  = document.getElementById('currPinRow');
-    if(storedPin && currPinRow.style.display !== 'none'){
+    // If a PIN is set, verify it before allowing passphrase or PIN changes
+    if(storedPin){
       const currPin = document.getElementById('inpCurrPin').value;
-      if(!currPin){ hideOv(); err.textContent='Enter your current PIN to confirm changes.'; err.style.display='block'; return; }
-      if(currPin !== storedPin){ hideOv(); err.textContent='Current PIN is incorrect.'; err.style.display='block'; document.getElementById('inpCurrPin').value=''; return; }
+      if(!currPin){
+        err.textContent='Enter your current PIN to save changes.';
+        err.style.display='block'; return;
+      }
+      if(currPin !== storedPin){
+        err.textContent='Incorrect PIN — changes not saved.';
+        err.style.display='block';
+        document.getElementById('inpCurrPin').value='';
+        return;
+      }
     }
 
-    // Validations passed — apply changes
+    // PIN verified (or no PIN set) — apply changes
     jbKey=key; jbBin=bin;
+    showOv();
     try{
       const d=await jbRead();
       team=d.team||[]; avail=d.avail||{};
 
-      // New passphrase — re-derive key with new salt; fall back to current passphrase if blank
-      const newPass = document.getElementById('inpPass').value || document.getElementById('inpCurrPass').value;
-      const salt    = crypto.getRandomValues(new Uint8Array(16));
-      lsRawSet(LS_SALT, buf2hex(salt));
-      cryptoKey     = await deriveKey(newPass, salt);
+      // Passphrase: use new one if provided, otherwise keep the in-memory cryptoKey unchanged
+      const newPass = document.getElementById('inpPass').value;
+      if(newPass){
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        lsRawSet(LS_SALT, buf2hex(salt));
+        cryptoKey = await deriveKey(newPass, salt);
+      }
+      // If no new passphrase, cryptoKey stays as-is (already set from the unlock step)
 
       await LS.set(LSK, jbKey);
       await LS.set(LSB, jbBin);
 
-      // PIN: new value, keep current if blank, remove if explicitly cleared
+      // PIN: new value if provided, remove if blank was entered where a PIN existed
       const newPin = document.getElementById('inpPin').value;
-      if(newPin)               { await LS.set(LSPIN, newPin); }
-      else if(!storedPin)      { LS.del(LSPIN); }          // was blank, stays blank
-      else                     { LS.del(LSPIN); }          // had PIN, blank = remove
+      if(newPin)      { await LS.set(LSPIN, newPin); }
+      else            { LS.del(LSPIN); }
 
       localOnly=false;
       hideOv();
+      pastWeekUnlocked=false; // re-lock past weeks after any settings change
       toast('✅ Settings saved.');
       showApp();
     }catch(e){
       hideOv();
-      jbKey=null; jbBin=null; cryptoKey=null;
       err.textContent='Could not connect: '+e.message;
       err.style.display='block';
     }
@@ -865,7 +843,6 @@ function wireEvents(){
   on('inpKey',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpBin').focus(); });
   on('inpBin',       'keydown', e=>{ if(e.key==='Enter') document.getElementById('inpPass').focus(); });
   on('inpPass',      'keydown', e=>{ if(e.key==='Enter') connect(); });
-  on('inpCurrPass',  'keydown', e=>{ if(e.key==='Enter') connect(); });
   on('inpCurrPin',   'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header
   on('btnRecfg',     'click', showSetup);

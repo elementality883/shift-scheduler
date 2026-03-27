@@ -927,6 +927,16 @@ async function renderAvail(){
   }).join('')+'</tr>').join('');
 }
 
+// ═══════════════════════════════════════════════════════
+// LINKED AVAILABILITY RULES
+// When a trigger person is set to a trigger status,
+// the linked person is automatically set to the linked status.
+// Format: { trigger: [name, status], linked: [name, status] }
+// ═══════════════════════════════════════════════════════
+const LINKED_RULES = [
+  { trigger: ['Yuta', 'pto'], linked: ['Tatsuya', 'exclude'] },
+];
+
 async function setAv(name,dk,sel){
   // If this date is in a past week and PIN is set and not yet unlocked,
   // revert the visual change and show the PIN modal
@@ -938,7 +948,6 @@ async function setAv(name,dk,sel){
     sel.value = prev;
     const c=prev==='pto'?'spto':prev==='late'?'slate':prev==='exclude'?'sexclude':'sa';
     sel.className='asel '+c;
-    // After unlock, the table re-renders so user can try again
     showPinModal(null);
     return;
   }
@@ -946,7 +955,34 @@ async function setAv(name,dk,sel){
   avail[name][dk]=sel.value;
   const c=sel.value==='pto'?'spto':sel.value==='late'?'slate':sel.value==='exclude'?'sexclude':'sa';
   sel.className='asel '+c;
+
+  // Apply linked rules
+  applyLinkedRules(name, dk, sel.value);
+
   scheduleSave(dk);
+}
+
+function applyLinkedRules(changedName, dk, newStatus){
+  LINKED_RULES.forEach(rule=>{
+    const [triggerName, triggerStatus] = rule.trigger;
+    const [linkedName,  linkedStatus ] = rule.linked;
+    if(changedName===triggerName && newStatus===triggerStatus){
+      // Only apply if the linked person exists in the team
+      if(!team.includes(linkedName)) return;
+      if(!avail[linkedName]) avail[linkedName]={};
+      avail[linkedName][dk] = linkedStatus;
+      // Update the DOM select if it's visible
+      const linkedSel = document.querySelector(
+        `select[data-name="${linkedName.replace(/"/g,'&quot;')}"][data-date="${dk}"]`
+      );
+      if(linkedSel){
+        linkedSel.value = linkedStatus;
+        const lc=linkedStatus==='pto'?'spto':linkedStatus==='late'?'slate':linkedStatus==='exclude'?'sexclude':'sa';
+        linkedSel.className='asel '+lc;
+      }
+      toast(`🔗 ${linkedName} automatically set to ${linkedStatus} (linked to ${changedName}'s PTO)`);
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1025,6 +1061,7 @@ async function applyBulk(){
       selected.forEach(name=>{
         if(!avail[name]) avail[name]={};
         avail[name][dk]=status;
+        applyLinkedRules(name, dk, status);
       });
       lastDk=dk;
       daysChanged++;

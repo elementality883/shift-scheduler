@@ -15,6 +15,12 @@
 html,body{min-height:100%;background:var(--bg);}
 body{color:var(--text);font-family:'DM Mono',monospace;padding:24px 16px 60px;}
 
+/* PIN MODAL */
+.pin-modal{position:fixed;inset:0;background:rgba(13,15,20,0.88);display:flex;align-items:center;justify-content:center;z-index:300;}
+.pin-modal.hidden{display:none;}
+.pin-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:26px 28px;max-width:340px;width:100%;text-align:center;}
+.pin-title{font-family:'Syne',sans-serif;font-weight:800;font-size:1rem;color:var(--text);margin-bottom:8px;}
+.pin-sub{font-size:0.74rem;color:var(--muted);line-height:1.55;margin-bottom:14px;}
 /* BULK EDIT */
 .bulk-people{display:flex;flex-wrap:wrap;gap:6px;min-height:32px;padding:8px;background:#1e2330;border:1px solid var(--border);border-radius:8px;}
 .bulk-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:6px;font-size:0.75rem;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--muted);transition:all 0.15s;user-select:none;}
@@ -155,6 +161,20 @@ select option{background:#1e2330;}
 </head>
 <body>
 
+<!-- PIN modal — shown when editing past week without unlock -->
+<div class="pin-modal hidden" id="pinModal">
+  <div class="pin-card">
+    <div class="pin-title">🔒 Past Week Locked</div>
+    <p class="pin-sub">Enter the admin PIN to edit availability for previous weeks.</p>
+    <input type="password" class="setup-inp" id="pinInput" placeholder="Enter PIN…" maxlength="20" style="margin-bottom:8px;text-align:center;letter-spacing:0.2em;">
+    <div class="errtxt" id="pinErr"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-sec" id="btnPinCancel" style="flex:1">Cancel</button>
+      <button class="btn" id="btnPinConfirm" style="flex:1">Unlock →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Loading overlay -->
 <div class="ov hidden" id="ov"><div class="spin"></div></div>
 
@@ -232,6 +252,9 @@ select option{background:#1e2330;}
 
     <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
     <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
+
+    <div class="field-lbl" style="margin-top:10px">Past Week PIN <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(optional — locks editing of previous weeks)</span></div>
+    <input class="setup-inp" type="password" id="inpPin" placeholder="Leave blank to disable lock…" style="margin-top:4px">
 
     <div class="errtxt" id="setupErr"></div>
 
@@ -430,9 +453,12 @@ const LSB  = 'sched_jb_bin';
 const LSD  = 'sched_local';
 const LSWT = 'sched_wx_tok';
 const LSWR = 'sched_wx_room';
+const LSPIN = 'sched_pin'; // encrypted PIN for past-week lock
 
 let team=[], avail={}, jbKey=null, jbBin=null, localOnly=false;
 let saveTimer=null, wkStart=getMonday(new Date()), asActive=false;
+let pastWeekUnlocked=false; // session-only flag — resets on page reload
+let pendingPinAction=null;  // callback to run after successful PIN entry
 
 // lateOnly:true  = ONLY the designated late-shift person is assigned here
 // lateOnly:false = normal random pool; late-shift person is EXCLUDED from these slots
@@ -616,14 +642,17 @@ async function showApp(){
   if(savedTok && savedRoom){ activateAS(savedTok, savedRoom); }
 }
 
-function showSetup(){
+async function showSetup(){
   document.getElementById('appWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('setupWrap').style.display='flex';
-  // Show back button only when navigating from the app, not on first-time setup
   document.getElementById('setupBackRow').style.display='block';
   if(jbKey) document.getElementById('inpKey').value=jbKey;
   if(jbBin) document.getElementById('inpBin').value=jbBin;
+  // Show current PIN status
+  const storedPin = await LS.get(LSPIN);
+  const pinEl = document.getElementById('inpPin');
+  if(pinEl) pinEl.placeholder = storedPin ? 'PIN set — enter new PIN to change, or leave blank to remove' : 'Leave blank to disable lock…';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -654,6 +683,10 @@ async function connect(){
     // Encrypt and store credentials
     await LS.set(LSK, jbKey);
     await LS.set(LSB, jbBin);
+    // Save PIN if provided; remove it if left blank
+    const pinVal = document.getElementById('inpPin')?.value || '';
+    if(pinVal){ await LS.set(LSPIN, pinVal); }
+    else { LS.del(LSPIN); }
     localOnly=false;
     hideOv();
     showApp();
@@ -713,6 +746,10 @@ function wireEvents(){
   // Unlock screen
   on('btnUnlock',    'click', unlock);
   on('inpUnlock',    'keydown', e=>{ if(e.key==='Enter') unlock(); });
+  // PIN modal
+  on('btnPinConfirm', 'click', verifyPin);
+  on('btnPinCancel',  'click', ()=>closePinModal(false));
+  on('pinInput',      'keydown', e=>{ if(e.key==='Enter') verifyPin(); if(e.key==='Escape') closePinModal(false); });
   // Setup back button
   on('btnSetupBack', 'click', ()=>{
     document.getElementById('setupWrap').style.display='none';
@@ -790,21 +827,97 @@ function renderTeam(){
 // AVAILABILITY
 // ═══════════════════════════════════════════════════════
 function getMonday(d){const dt=new Date(d);dt.setHours(0,0,0,0);const day=dt.getDay();dt.setDate(dt.getDate()-day+(day===0?-6:1));return dt;}
+
+// Returns true if the currently displayed week starts before the current week
+function isPastWeek(){
+  const currentMonday = getMonday(new Date());
+  return wkStart < currentMonday;
+}
+
+// Show the PIN modal; onSuccess callback runs if PIN is correct
+function showPinModal(onSuccess){
+  pendingPinAction = onSuccess;
+  const modal = document.getElementById('pinModal');
+  const inp   = document.getElementById('pinInput');
+  const err   = document.getElementById('pinErr');
+  err.style.display='none';
+  inp.value='';
+  modal.classList.remove('hidden');
+  setTimeout(()=>inp.focus(), 50);
+}
+
+async function verifyPin(){
+  const inp    = document.getElementById('pinInput');
+  const err    = document.getElementById('pinErr');
+  const entered = inp.value;
+  err.style.display='none';
+  if(!entered){ err.textContent='Enter the PIN.'; err.style.display='block'; return; }
+  const stored = await LS.get(LSPIN);
+  if(!stored){
+    // No PIN configured — allow through
+    closePinModal(true);
+    return;
+  }
+  if(entered === stored){
+    closePinModal(true);
+  } else {
+    err.textContent='Incorrect PIN. Try again.';
+    err.style.display='block';
+    inp.value='';
+    inp.focus();
+  }
+}
+
+function closePinModal(success){
+  document.getElementById('pinModal').classList.add('hidden');
+  document.getElementById('pinInput').value='';
+  document.getElementById('pinErr').style.display='none';
+  if(success){
+    pastWeekUnlocked=true;
+    toast('🔓 Past weeks unlocked for this session.');
+    renderAvail(); // re-render without lock styling
+    if(pendingPinAction){ pendingPinAction(); }
+  }
+  pendingPinAction=null;
+}
 function addDays(d,n){const dt=new Date(d);dt.setDate(dt.getDate()+n);return dt;}
 function fmtD(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function chWk(dir){wkStart=addDays(wkStart,dir*7);updWkLbl();renderAvail();}
 function updWkLbl(){const e=addDays(wkStart,4),fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});document.getElementById('wkLbl').textContent=`${fmt(wkStart)} – ${fmt(e)}`;}
 function getSt(n,dk){return(avail[n]&&avail[n][dk])||'available';}
 
-function renderAvail(){
+async function renderAvail(){
   const hd=document.getElementById('avHead'),bd=document.getElementById('avBody');
   if(!hd||!bd) return;
   if(!team.length){hd.innerHTML='';bd.innerHTML='<tr><td colspan="6" style="padding:16px;color:var(--muted);font-size:0.74rem">Add team members first.</td></tr>';return;}
   const days=Array.from({length:5},(_,i)=>addDays(wkStart,i)),keys=days.map(fmtD);
-  hd.innerHTML='<tr><th class="nc">Member</th>'+days.map(d=>`<th>${d.toLocaleDateString('en-GB',{weekday:'short'})}<br><span style="font-weight:400">${d.getMonth()+1}/${d.getDate()}</span></th>`).join('')+'</tr>';
+
+  // Determine if this week is locked
+  const past = isPastWeek();
+  const storedPin = await LS.get(LSPIN);
+  const locked = past && !!storedPin && !pastWeekUnlocked;
+
+  // Week label with lock badge if locked
+  const lockBadge = locked
+    ? ` <span style="font-size:0.6rem;background:rgba(255,107,53,0.12);color:var(--warn);border:1px solid rgba(255,107,53,0.3);border-radius:4px;padding:1px 7px;vertical-align:middle;cursor:pointer;" id="pastWeekLockBadge">🔒 Locked — click to unlock</span>`
+    : past && !storedPin ? '' // past but no PIN set — freely editable
+    : '';
+
+  hd.innerHTML='<tr><th class="nc">Member' + lockBadge + '</th>'+
+    days.map(d=>`<th>${d.toLocaleDateString('en-GB',{weekday:'short'})}<br><span style="font-weight:400">${d.getMonth()+1}/${d.getDate()}</span></th>`).join('')+'</tr>';
+
+  // Wire lock badge click
+  const badge = document.getElementById('pastWeekLockBadge');
+  if(badge) badge.addEventListener('click', ()=>showPinModal(null));
+
   bd.innerHTML=team.map(name=>`<tr><td class="nc">${name}</td>`+keys.map(dk=>{
     const v=getSt(name,dk);
     const c=v==='pto'?'spto':v==='late'?'slate':v==='exclude'?'sexclude':'sa';
+    if(locked){
+      // Show value but disable interaction
+      const labels={available:'✅ Available',late:'🕐 Late Shift',pto:'🌴 PTO',exclude:'🚫 Exclude'};
+      return`<td><div class="asel ${c}" style="display:flex;align-items:center;justify-content:center;opacity:0.6;cursor:not-allowed;font-size:0.64rem;padding:4px;">${labels[v]||'✅ Available'}</div></td>`;
+    }
     return`<td><select class="asel ${c}" data-name="${name.replace(/"/g,'&quot;')}" data-date="${dk}">
       <option value="available" ${v==='available'?'selected':''}>✅ Available</option>
       <option value="late"      ${v==='late'     ?'selected':''}>🕐 Late Shift</option>
@@ -814,12 +927,26 @@ function renderAvail(){
   }).join('')+'</tr>').join('');
 }
 
-function setAv(name,dk,sel){
+async function setAv(name,dk,sel){
+  // If this date is in a past week and PIN is set and not yet unlocked,
+  // revert the visual change and show the PIN modal
+  const past = isPastWeek();
+  const storedPin = await LS.get(LSPIN);
+  if(past && storedPin && !pastWeekUnlocked){
+    // Revert select to previous value
+    const prev = getSt(name,dk);
+    sel.value = prev;
+    const c=prev==='pto'?'spto':prev==='late'?'slate':prev==='exclude'?'sexclude':'sa';
+    sel.className='asel '+c;
+    // After unlock, the table re-renders so user can try again
+    showPinModal(null);
+    return;
+  }
   if(!avail[name]) avail[name]={};
   avail[name][dk]=sel.value;
   const c=sel.value==='pto'?'spto':sel.value==='late'?'slate':sel.value==='exclude'?'sexclude':'sa';
   sel.className='asel '+c;
-  scheduleSave(dk); // pass the changed date so auto-send knows what to re-check
+  scheduleSave(dk);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -851,7 +978,7 @@ function renderBulkPeople(){
   });
 }
 
-function applyBulk(){
+async function applyBulk(){
   const errEl = document.getElementById('bulkErr');
   errEl.style.display='none';
 
@@ -874,6 +1001,15 @@ function applyBulk(){
   if(from>to){
     errEl.textContent='"From" date must be on or before "To" date.';
     errEl.style.display='block'; return;
+  }
+
+  // Check if the range touches any past week and PIN is required
+  const currentMonday = getMonday(new Date());
+  const fromMonday    = getMonday(new Date(from+'T00:00:00'));
+  const storedPin     = await LS.get(LSPIN);
+  if(fromMonday < currentMonday && storedPin && !pastWeekUnlocked){
+    showPinModal(()=>applyBulk()); // retry after unlock
+    return;
   }
 
   // Walk every calendar day in range, skip weekends

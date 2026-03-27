@@ -664,8 +664,22 @@ async function loadAndLaunch(){
     const d=await jbRead();
     team=d.team||[]; avail=d.avail||{}; localOnly=false;
     // Decrypt PIN and WebEx credentials from JSONBin — never touch localStorage
-    currentPin = d.pin    ? d.pin                                  : null;
-    wxToken    = d.wxTok  ? await decryptWx(d.wxTok)   : null;
+    currentPin = d.pin    ? await decryptPin(d.pin)    : null;
+    // If PIN exists but couldn't decrypt, passphrase is wrong
+    if(d.pin && !currentPin){
+      hideOv();
+      cryptoKey=null; jbKey=null; jbBin=null;
+      // Show unlock screen with error, or setup screen with error
+      const unlockEl = document.getElementById('unlockWrap');
+      const unlockErr = document.getElementById('unlockErr');
+      if(unlockEl.style.display !== 'none'){
+        unlockErr.textContent='Incorrect passphrase — please try again.';
+        unlockErr.style.display='block';
+        document.getElementById('inpUnlock').value='';
+      }
+      return;
+    }
+    wxToken    = d.wxTok  ? await decryptWx(d.wxTok)  : null;
     wxRoom     = d.wxRoom ? await decryptWx(d.wxRoom)  : null;
   }catch(e){
     const c=await LS.get(LSD);
@@ -802,22 +816,42 @@ async function connect(){
       const d=await jbRead();
       team=d.team||[]; avail=d.avail||{};
 
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      lsRawSet(LS_SALT, buf2hex(salt));
-      cryptoKey  = await deriveKey(pass, salt);
-
-      await LS.set(LSK, jbKey);
-      await LS.set(LSB, jbBin);
-      localOnly=false;
-
-      if(d.pin){
-        // PIN already set by admin — load directly, no decryption needed
-        currentPin = d.pin;
+      if(d.pin && d.salt){
+        // ── RETURNING USER: PIN + salt already in JSONBin ──────────────────
+        // Must use the admin's salt — a different salt produces a different key
+        // which cannot decrypt the PIN regardless of passphrase correctness.
+        cryptoKey = await deriveKey(pass, hex2buf(d.salt));
+        const decrypted = await decryptPin(d.pin);
+        if(!decrypted){
+          // Wrong passphrase — reset fully and ask again
+          hideOv();
+          cryptoKey=null; jbKey=null; jbBin=null;
+          document.getElementById('inpPass').value='';
+          document.getElementById('inpPass').focus();
+          err.textContent='Incorrect passphrase — please try again.';
+          err.style.display='block';
+          return;
+        }
+        // Correct passphrase — store credentials in this user's localStorage
+        lsRawSet(LS_SALT, d.salt);
+        await LS.set(LSK, jbKey);
+        await LS.set(LSB, jbBin);
+        currentPin = decrypted;
+        localOnly=false;
         hideOv();
-        await doSave();
         showApp();
+
       } else {
-        // No PIN in JSONBin yet — prompt admin to create one before loading
+        // ── ADMIN FIRST SETUP: no PIN in JSONBin yet ───────────────────────
+        // Generate salt, derive key, save to localStorage, then prompt for PIN.
+        // confirmPinSetup() will call doSave() which writes pin + salt to JSONBin.
+        const salt    = crypto.getRandomValues(new Uint8Array(16));
+        const saltHex = buf2hex(salt);
+        lsRawSet(LS_SALT, saltHex);
+        cryptoKey = await deriveKey(pass, salt);
+        await LS.set(LSK, jbKey);
+        await LS.set(LSB, jbBin);
+        localOnly=false;
         hideOv();
         showPinSetupModal();
       }
@@ -850,15 +884,18 @@ function scheduleSave(changedDate){
 }
 
 async function doSave(){
-  // PIN stored as plain text in JSONBin — access is controlled by the API key.
-  // WebEx credentials encrypted with user's passphrase-derived key.
-  const encryptedTok   = wxToken ? await encryptWx(wxToken) : null;
-  const encryptedRoom  = wxRoom  ? await encryptWx(wxRoom)  : null;
+  // PIN and WebEx credentials encrypted with the shared passphrase-derived key.
+  // The salt is stored in JSONBin (plain) so all users can derive the same key.
+  const encryptedPin   = currentPin ? await encryptPin(currentPin) : null;
+  const encryptedTok   = wxToken    ? await encryptWx(wxToken)     : null;
+  const encryptedRoom  = wxRoom     ? await encryptWx(wxRoom)      : null;
+  const salt           = lsRaw(LS_SALT); // admin's salt — same for everyone
   const p = {
     team, avail,
-    ...(currentPin    ? {pin:    currentPin}    : {}),
-    ...(encryptedTok  ? {wxTok:  encryptedTok}  : {}),
-    ...(encryptedRoom ? {wxRoom: encryptedRoom} : {}),
+    ...(salt          ? {salt}                    : {}),
+    ...(encryptedPin  ? {pin:    encryptedPin}    : {}),
+    ...(encryptedTok  ? {wxTok:  encryptedTok}   : {}),
+    ...(encryptedRoom ? {wxRoom: encryptedRoom}   : {}),
   };
   await LS.set(LSD,JSON.stringify({team,avail})); // local cache (credentials excluded)
   if(localOnly||!jbKey||!jbBin){setSyncState('local');return;}

@@ -15,7 +15,14 @@
 html,body{min-height:100%;background:var(--bg);}
 body{color:var(--text);font-family:'DM Mono',monospace;padding:24px 16px 60px;}
 
-/* UNLOCK */
+/* BULK EDIT */
+.bulk-people{display:flex;flex-wrap:wrap;gap:6px;min-height:32px;padding:8px;background:#1e2330;border:1px solid var(--border);border-radius:8px;}
+.bulk-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:6px;font-size:0.75rem;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--muted);transition:all 0.15s;user-select:none;}
+.bulk-chip.selected{background:rgba(0,229,160,0.12);border-color:rgba(0,229,160,0.4);color:var(--accent);}
+.bulk-chip:hover{border-color:var(--accent);color:var(--text);}
+.bulk-select-all{font-size:0.67rem;color:var(--muted);cursor:pointer;margin-bottom:4px;display:block;}
+.bulk-select-all:hover{color:var(--accent);}
+
 .unlock{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:88vh;gap:16px;padding:16px;}
 .unlock h2{font-family:'Syne',sans-serif;font-weight:800;font-size:1.6rem;text-align:center;}
 .unlock h2 em{color:var(--accent);font-style:normal;}
@@ -293,6 +300,39 @@ select option{background:#1e2330;}
       </div>
       <p class="note"><strong>Late Shift</strong> = covers 12:00–13:00 &amp; 14:00–15:00 only — not randomised into other slots. <strong>PTO / Exclude</strong> = removed from all assignments that day.</p>
     </div>
+
+    <!-- BULK EDIT -->
+    <div class="card">
+      <div class="ct">Bulk Edit</div>
+      <p class="note" style="margin-top:0;margin-bottom:14px">Apply a status to one or more people across a date range. Weekends are skipped automatically.</p>
+
+      <div class="field-lbl">People</div>
+      <div class="bulk-people" id="bulkPeople"></div>
+
+      <div class="two-col" style="margin-top:10px">
+        <div>
+          <div class="field-lbl">From</div>
+          <input type="date" id="bulkFrom">
+        </div>
+        <div>
+          <div class="field-lbl">To</div>
+          <input type="date" id="bulkTo">
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="field-lbl">Status</div>
+        <select id="bulkStatus">
+          <option value="available">✅ Available</option>
+          <option value="late">🕐 Late Shift</option>
+          <option value="pto">🌴 PTO</option>
+          <option value="exclude">🚫 Exclude</option>
+        </select>
+      </div>
+
+      <p class="errtxt" id="bulkErr"></p>
+      <button class="btn btn-big" id="btnBulkApply" style="margin-top:14px">✅ Apply to All Selected Days</button>
+    </div>
   </div>
 
   <!-- SCHEDULE -->
@@ -522,6 +562,10 @@ async function showApp(){
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('appWrap').style.display='block';
   document.getElementById('schedDate').value=fmtD(new Date());
+  const todayStr=fmtD(new Date());
+  const bf=document.getElementById('bulkFrom'), bt=document.getElementById('bulkTo');
+  if(bf&&!bf.value) bf.value=todayStr;
+  if(bt&&!bt.value) bt.value=todayStr;
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
   // Restore saved auto-send credentials
@@ -654,7 +698,7 @@ function wireEvents(){
   on('btnRerand',    'click', ()=>generate());
   on('cpBtn',        'click', copyMsg);
   // Auto-send
-  on('btnASStart',   'click', startAS);
+  on('btnBulkApply', 'click', applyBulk);
   on('btnASStop',    'click', stopAS);
   on('btnASTest',    'click', testSend);
 }
@@ -669,7 +713,7 @@ function sw(id){
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   const panel=document.getElementById('tab-'+id);
   if(panel) panel.classList.add('active');
-  if(id==='avail') renderAvail();
+  if(id==='avail'){ renderAvail(); renderBulkPeople(); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -730,6 +774,95 @@ function setAv(name,dk,sel){
   const c=sel.value==='pto'?'spto':sel.value==='late'?'slate':sel.value==='exclude'?'sexclude':'sa';
   sel.className='asel '+c;
   scheduleSave(dk); // pass the changed date so auto-send knows what to re-check
+}
+
+// ═══════════════════════════════════════════════════════
+// BULK EDIT
+// ═══════════════════════════════════════════════════════
+
+// Render the people chip selector — called when tab opens or team changes
+function renderBulkPeople(){
+  const container = document.getElementById('bulkPeople');
+  if(!container) return;
+  if(!team.length){
+    container.innerHTML='<span style="color:var(--muted);font-size:0.73rem">Add team members first.</span>';
+    return;
+  }
+  // "Select all" toggle link + one chip per person
+  container.innerHTML =
+    `<span class="bulk-select-all" id="bulkSelAll">Select all / None</span>` +
+    team.map(n=>`<span class="bulk-chip" data-person="${n.replace(/"/g,'&quot;')}">${n}</span>`).join('');
+
+  // Wire select-all toggle via delegation on container
+  document.getElementById('bulkSelAll').addEventListener('click', ()=>{
+    const chips=[...container.querySelectorAll('.bulk-chip')];
+    const allSelected = chips.every(c=>c.classList.contains('selected'));
+    chips.forEach(c=>c.classList.toggle('selected',!allSelected));
+  });
+
+  container.querySelectorAll('.bulk-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>chip.classList.toggle('selected'));
+  });
+}
+
+function applyBulk(){
+  const errEl = document.getElementById('bulkErr');
+  errEl.style.display='none';
+
+  // Collect selected people
+  const selected = [...document.querySelectorAll('.bulk-chip.selected')]
+    .map(c=>c.dataset.person);
+  if(!selected.length){
+    errEl.textContent='Select at least one person.';
+    errEl.style.display='block'; return;
+  }
+
+  const from   = document.getElementById('bulkFrom').value;
+  const to     = document.getElementById('bulkTo').value;
+  const status = document.getElementById('bulkStatus').value;
+
+  if(!from||!to){
+    errEl.textContent='Please set both a From and To date.';
+    errEl.style.display='block'; return;
+  }
+  if(from>to){
+    errEl.textContent='"From" date must be on or before "To" date.';
+    errEl.style.display='block'; return;
+  }
+
+  // Walk every calendar day in range, skip weekends
+  const cur = new Date(from+'T00:00:00');
+  const end = new Date(to+'T00:00:00');
+  let daysChanged = 0;
+  let lastDk = null;
+
+  while(cur<=end){
+    const day = cur.getDay();
+    if(day!==0 && day!==6){ // skip Sat(6) and Sun(0)
+      const dk = fmtD(cur);
+      selected.forEach(name=>{
+        if(!avail[name]) avail[name]={};
+        avail[name][dk]=status;
+      });
+      lastDk=dk;
+      daysChanged++;
+    }
+    cur.setDate(cur.getDate()+1);
+  }
+
+  if(!daysChanged){
+    errEl.textContent='No working days found in that range.';
+    errEl.style.display='block'; return;
+  }
+
+  // Single save — pass the last changed date for auto-send trigger
+  scheduleSave(lastDk);
+
+  // Refresh the weekly table if any of the changed dates are visible
+  renderAvail();
+
+  const label = status==='pto'?'PTO':status==='late'?'Late Shift':status==='exclude'?'Exclude':'Available';
+  toast(`✅ Set ${selected.length} ${selected.length===1?'person':'people'} to ${label} for ${daysChanged} day${daysChanged===1?'':'s'}`);
 }
 
 // ═══════════════════════════════════════════════════════

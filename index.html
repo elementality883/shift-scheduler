@@ -325,6 +325,7 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
         <button id="btnWkPrev">← Prev</button>
         <span id="wkLbl"></span>
         <button id="btnWkToday">📅 Today</button>
+        <button id="btnWkRefresh">🔄 Refresh</button>
         <button id="btnWkNext">Next →</button>
       </div>
       <div class="legend">
@@ -855,6 +856,27 @@ function wireEvents(){
   // Avail
   on('btnWkPrev',    'click', ()=>chWk(-1));
   on('btnWkToday',   'click', ()=>{ wkStart=getMonday(new Date()); updWkLbl(); renderAvail(); });
+  on('btnWkRefresh', 'click', async ()=>{
+    const btn=document.getElementById('btnWkRefresh');
+    btn.textContent='⏳';
+    btn.disabled=true;
+    try{
+      if(!localOnly && jbKey && jbBin){
+        const d=await jbRead();
+        team=d.team||[]; avail=d.avail||{};
+        renderTeam(); renderAvail();
+        toast('✅ Availability refreshed.');
+      } else {
+        renderAvail();
+        toast('✅ Refreshed.');
+      }
+    }catch(e){
+      toast('⚠ Refresh failed: '+e.message);
+    }finally{
+      btn.textContent='🔄 Refresh';
+      btn.disabled=false;
+    }
+  });
   on('btnWkNext',    'click', ()=>chWk(1));
   on('avBody',       'change', e=>{ const s=e.target.closest('select[data-name]'); if(s) setAv(s.dataset.name,s.dataset.date,s); });
   // Schedule

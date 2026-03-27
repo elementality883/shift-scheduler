@@ -8,18 +8,23 @@
 #   08:00 JST = 23:00 UTC the previous day  → cron: Sun–Thu at 23:00 UTC
 #   17:00 JST = 08:00 UTC the same day      → cron: Mon–Fri at 08:00 UTC
 #
-# SEND_TYPE is passed explicitly via the matrix — no hour-detection guesswork.
+# TEST cron entries fire every 30 minutes (all days) — remove when done testing.
 
 name: Send Shift Schedule
 
 on:
   schedule:
-    # 08:00 JST = 23:00 UTC (Sun–Thu covers Mon–Fri JST mornings)
-    - cron: '0 23 * * 0,1,2,3,4'
-    # 17:00 JST = 08:00 UTC (Mon–Fri)
-    - cron: '0 8 * * 1,2,3,4,5'
+    # ── TEST: every 30 minutes (remove these two lines when done testing) ──
+    - cron: '0 */1 * * *'
+    - cron: '30 */1 * * *'
 
-  # Allow manual trigger from the Actions tab for testing
+    # ── PRODUCTION: uncomment these and remove the test lines above ────────
+    # 08:00 JST = 23:00 UTC (Sun–Thu covers Mon–Fri JST mornings)
+    # - cron: '0 23 * * 0,1,2,3,4'
+    # 17:00 JST = 08:00 UTC (Mon–Fri)
+    # - cron: '0 8 * * 1,2,3,4,5'
+
+  # Allow manual trigger from the Actions tab at any time
   workflow_dispatch:
     inputs:
       send_type:
@@ -31,7 +36,7 @@ on:
           - morning
           - evening
 
-# Force all Actions to use Node.js 24 (avoids Node 20 deprecation warning)
+# Force all Actions to use Node.js 24
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -54,12 +59,8 @@ jobs:
         id: sendtype
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual trigger — use the dropdown selection
             echo "type=${{ github.event.inputs.send_type }}" >> $GITHUB_OUTPUT
           else
-            # Scheduled trigger — determine by UTC hour
-            # 23:xx UTC → morning send (08:00 JST)
-            # 08:xx UTC → evening send (17:00 JST)
             HOUR=$(date -u +%H)
             if [ "$HOUR" -ge 20 ] || [ "$HOUR" -lt 4 ]; then
               echo "type=morning" >> $GITHUB_OUTPUT

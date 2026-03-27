@@ -421,6 +421,8 @@ function showApp(){
   if(savedT2)   document.getElementById('wxT2').value=savedT2;
   // Auto-generate today's schedule immediately on load
   generate();
+  // Auto-activate auto-send if credentials are already saved
+  if(savedTok && savedRoom){ startAS(); }
 }
 
 function showSetup(){

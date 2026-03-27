@@ -330,6 +330,10 @@ const JB   = 'https://api.jsonbin.io/v3';
 const LSK  = 'sched_jb_key';
 const LSB  = 'sched_jb_bin';
 const LSD  = 'sched_local';
+const LSWT = 'sched_wx_tok';
+const LSWR = 'sched_wx_room';
+const LSW1 = 'sched_wx_t1';
+const LSW2 = 'sched_wx_t2';
 
 let team=[], avail={}, jbKey=null, jbBin=null, localOnly=false;
 let saveTimer=null, wkStart=getMonday(new Date()), asInterval=null, sentKeys={};
@@ -408,6 +412,13 @@ function showApp(){
   document.getElementById('schedDate').value=fmtD(new Date());
   updWkLbl(); renderTeam(); renderAvail();
   setSyncState(localOnly?'local':'idle');
+  // Restore saved auto-send credentials
+  const savedTok=LS.get(LSWT), savedRoom=LS.get(LSWR);
+  const savedT1=LS.get(LSW1),  savedT2=LS.get(LSW2);
+  if(savedTok)  document.getElementById('wxTok').value=savedTok;
+  if(savedRoom) document.getElementById('wxRoom').value=savedRoom;
+  if(savedT1)   document.getElementById('wxT1').value=savedT1;
+  if(savedT2)   document.getElementById('wxT2').value=savedT2;
   // Auto-generate today's schedule immediately on load
   generate();
 }
@@ -710,6 +721,9 @@ function startAS(){
   const t1=document.getElementById('wxT1').value.trim();
   const t2=document.getElementById('wxT2').value.trim();
   if(!tok||!room){toast('Enter Bot Token and Room ID.');return;}
+  // Persist credentials so they survive page reload
+  LS.set(LSWT,tok); LS.set(LSWR,room);
+  LS.set(LSW1,t1);  LS.set(LSW2,t2);
   stopAS();
   asInterval=setInterval(()=>{
     const now=new Date();

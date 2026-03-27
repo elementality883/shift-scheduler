@@ -8,7 +8,7 @@
 #   08:00 JST = 23:00 UTC the previous day  → cron: Sun–Thu at 23:00 UTC
 #   17:00 JST = 08:00 UTC the same day      → cron: Mon–Fri at 08:00 UTC
 #
-# TEST cron entries fire every 30 minutes (all days) — remove when done testing.
+# TEST cron entries fire every 30 minutes (all days) — remove when done testing!
 
 name: Send Shift Schedule
 

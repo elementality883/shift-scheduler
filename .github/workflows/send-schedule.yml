@@ -15,7 +15,7 @@ name: Send Shift Schedule
 on:
   schedule:
     # ── TEST: every 30 minutes (remove these two lines when done testing) ──
-    - cron: '17 * * * *'
+    # - cron: '17 * * * *'
     # - cron: '37 * * * *'
 
     # ── PRODUCTION: uncomment these and remove the test lines above ────────

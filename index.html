@@ -322,21 +322,21 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
   <!-- TEAM -->
   <div class="tab-panel active" id="tab-team">
     <div class="card">
-      <div class="ct">Team Members</div>
+      <div class="ct" id="ctTeam">Team Members</div>
       <div class="tag-grid" id="teamGrid"></div>
       <div class="add-row">
         <input type="text" id="nameIn" placeholder="Enter name and press Enter or click Add…">
         <button class="btn" id="btnAdd">Add</button>
       </div>
       <p class="errtxt" id="teamErr"></p>
-      <p class="note">Changes save automatically and sync to everyone who has the same Bin ID.</p>
+      <p class="note" id="noteTeam">Changes save automatically and sync to everyone who has the same Bin ID.</p>
     </div>
   </div>
 
   <!-- AVAILABILITY -->
   <div class="tab-panel" id="tab-avail">
     <div class="card">
-      <div class="ct">Weekly Availability &amp; Late Shifts</div>
+      <div class="ct" id="ctAvail">Weekly Availability &amp; Late Shifts</div>
       <div class="wk-nav">
         <button id="btnWkPrev">← Prev</button>
         <span id="wkLbl"></span>
@@ -345,38 +345,38 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
         <button id="btnWkNext">Next →</button>
       </div>
       <div class="legend">
-        <div class="leg"><div class="ldot" style="background:var(--accent)"></div>Available</div>
-        <div class="leg"><div class="ldot" style="background:var(--late)"></div>Late Shift</div>
-        <div class="leg"><div class="ldot" style="background:var(--pto)"></div>PTO / Absent</div>
-        <div class="leg"><div class="ldot" style="background:var(--warn)"></div>Exclude</div>
+        <div class="leg" id="legAvail"><div class="ldot" style="background:var(--accent)"></div>Available</div>
+        <div class="leg" id="legLate"><div class="ldot" style="background:var(--late)"></div>Late Shift</div>
+        <div class="leg" id="legPto"><div class="ldot" style="background:var(--pto)"></div>PTO / Absent</div>
+        <div class="leg" id="legExcl"><div class="ldot" style="background:var(--warn)"></div>Exclude</div>
       </div>
       <div class="avail-wrap">
         <table class="avail-table"><thead id="avHead"></thead><tbody id="avBody"></tbody></table>
       </div>
-      <p class="note"><strong>Late Shift</strong> = covers 12:00–13:00 &amp; 14:00–15:00 only — not randomised into other slots. <strong>PTO / Exclude</strong> = removed from all assignments that day.</p>
+      <p class="note" id="noteAvail"><strong>Late Shift</strong> = covers 12:00–13:00 &amp; 14:00–15:00 only — not randomised into other slots. <strong>PTO / Exclude</strong> = removed from all assignments that day.</p>
     </div>
 
     <!-- BULK EDIT -->
     <div class="card">
-      <div class="ct">Bulk Edit</div>
-      <p class="note" style="margin-top:0;margin-bottom:14px">Apply a status to one or more people across a date range. Weekends are skipped automatically.</p>
+      <div class="ct" id="ctBulk">Bulk Edit</div>
+      <p class="note" id="noteBulk" style="margin-top:0;margin-bottom:14px">Apply a status to one or more people across a date range. Weekends are skipped automatically.</p>
 
-      <div class="field-lbl">People</div>
+      <div class="field-lbl" id="lblBulkPeople">People</div>
       <div class="bulk-people" id="bulkPeople"></div>
 
       <div class="two-col" style="margin-top:10px">
         <div>
-          <div class="field-lbl">From</div>
+          <div class="field-lbl" id="lblBulkFrom">From</div>
           <input type="date" id="bulkFrom">
         </div>
         <div>
-          <div class="field-lbl">To</div>
+          <div class="field-lbl" id="lblBulkTo">To</div>
           <input type="date" id="bulkTo">
         </div>
       </div>
 
       <div style="margin-top:10px">
-        <div class="field-lbl">Status</div>
+        <div class="field-lbl" id="lblBulkStatus">Status</div>
         <select id="bulkStatus">
           <option value="available">✅ Available</option>
           <option value="late">🕐 Late Shift</option>
@@ -391,28 +391,28 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 
     <!-- EXPORT CSV -->
     <div class="card">
-      <div class="ct">Export Availability as CSV</div>
-      <p class="note" style="margin-top:0;margin-bottom:14px">Download a monthly availability report showing each team member's status for every working day. Weekends are excluded.</p>
+      <div class="ct" id="ctExport">Export Availability as CSV</div>
+      <p class="note" id="noteExport" style="margin-top:0;margin-bottom:14px">Download a monthly availability report showing each team member's status for every working day. Weekends are excluded.</p>
       <div class="two-col">
         <div>
-          <div class="field-lbl">Month</div>
+          <div class="field-lbl" id="lblMonth">Month</div>
           <select id="exportMonth">
-            <option value="0">January</option>
-            <option value="1">February</option>
-            <option value="2">March</option>
-            <option value="3">April</option>
-            <option value="4">May</option>
-            <option value="5">June</option>
-            <option value="6">July</option>
-            <option value="7">August</option>
-            <option value="8">September</option>
-            <option value="9">October</option>
-            <option value="10">November</option>
-            <option value="11">December</option>
+            <option value="0" data-i18n-month="0">January</option>
+            <option value="1" data-i18n-month="1">February</option>
+            <option value="2" data-i18n-month="2">March</option>
+            <option value="3" data-i18n-month="3">April</option>
+            <option value="4" data-i18n-month="4">May</option>
+            <option value="5" data-i18n-month="5">June</option>
+            <option value="6" data-i18n-month="6">July</option>
+            <option value="7" data-i18n-month="7">August</option>
+            <option value="8" data-i18n-month="8">September</option>
+            <option value="9" data-i18n-month="9">October</option>
+            <option value="10" data-i18n-month="10">November</option>
+            <option value="11" data-i18n-month="11">December</option>
           </select>
         </div>
         <div>
-          <div class="field-lbl">Year</div>
+          <div class="field-lbl" id="lblYear">Year</div>
           <input type="text" id="exportYear" maxlength="4" placeholder="2026" style="width:100%">
         </div>
       </div>
@@ -477,11 +477,11 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
   <!-- AUTO-SEND -->
   <div class="tab-panel" id="tab-autosend">
     <div class="card">
-      <div class="ct">WebEx Auto-Send</div>
+      <div class="ct" id="ctAutosend">WebEx Auto-Send</div>
       <div style="display:grid;gap:10px">
-        <div><div class="fl">WebEx Bot Token</div>
+        <div><div class="fl" id="lblWxTok">WebEx Bot Token</div>
           <input type="text" id="wxTok" placeholder="Bearer token from developer.webex.com"></div>
-        <div><div class="fl">WebEx Room / Space ID</div>
+        <div><div class="fl" id="lblWxRoom">WebEx Room / Space ID</div>
           <input type="text" id="wxRoom" placeholder="Room ID"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
@@ -490,7 +490,7 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
         <button class="btn btn-sec" style="margin-left:auto" id="btnASTest">📤 Test Now</button>
       </div>
       <div class="tbox toff" id="asStatus">Auto-send is <strong>inactive</strong>.</div>
-      <p class="note" style="margin-top:10px">When active, any availability change made for <strong>today</strong> will automatically send an updated schedule to your WebEx room.</p>
+      <p class="note" id="noteAutosend" style="margin-top:10px">When active, any availability change made for <strong>today</strong> will automatically send an updated schedule to your WebEx room.</p>
     </div>
   </div>
 
@@ -1017,9 +1017,11 @@ const LANG = {
     note_autosend:'When active, any availability change made for <strong>today</strong> will automatically send an updated schedule to your WebEx room.',
 
     // CSV export
-    ct_export:'Export CSV',
+    ct_export:'Export Availability as CSV',
+    note_export:'Download a monthly availability report showing each team member\'s status for every working day. Weekends are excluded.',
     lbl_month:'Month', lbl_year:'Year',
     btn_export:'⬇ Download CSV',
+    months_en:['January','February','March','April','May','June','July','August','September','October','November','December'],
 
     // Past-week lock
     lock_badge:'🔒 Locked — click to unlock',
@@ -1109,9 +1111,11 @@ const LANG = {
     as_active:'自動送信<strong>有効</strong> — 本日の勤務状況が変更された場合にスケジュールを送信します。',
     note_autosend:'有効時は<strong>本日</strong>の勤務状況が変更されると、最新のスケジュールが自動でWebExルームに送信されます。',
 
-    ct_export:'CSVエクスポート',
+    ct_export:'勤務状況CSVエクスポート',
+    note_export:'全営業日における各チームメンバーの状態を含む月次レポートをダウンロードします。週末は除外されます。',
     lbl_month:'月', lbl_year:'年',
     btn_export:'⬇ CSVダウンロード',
+    months_en:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
 
     lock_badge:'🔒 ロック中 — クリックして解除',
     lock_title:'🔒 過去週ロック中',
@@ -1157,66 +1161,103 @@ const LANG = {
 function T(key){ return (LANG[currentLang]||LANG.en)[key] || (LANG.en)[key] || key; }
 
 function applyLang(){
-  // Tab buttons
-  document.querySelectorAll('[data-i18n]').forEach(el=>{
-    const key=el.dataset.i18n;
-    if(el.tagName==='INPUT'){ el.placeholder=T(key); }
-    else{ el.textContent=T(key); }
-  });
-
-  // Specific elements that need updating
-  const s = (id,key,html=false) => {
-    const el=document.getElementById(id);
-    if(el){ if(html) el.innerHTML=T(key); else el.textContent=T(key); }
-  };
-  const p = (id,key) => {
-    const el=document.getElementById(id);
-    if(el) el.placeholder=T(key);
-  };
+  const s  = (id,key,html=false)=>{ const el=document.getElementById(id); if(el){ if(html) el.innerHTML=T(key); else el.textContent=T(key); }};
+  const p  = (id,key)=>{ const el=document.getElementById(id); if(el) el.placeholder=T(key); };
+  const ph = (id,key)=>{ const el=document.getElementById(id); if(el) el.placeholder=T(key); };
 
   // Header
-  document.querySelector('.hdr p') && (document.querySelector('.hdr p').textContent=T('app_sub'));
+  const hdrP=document.querySelector('.hdr p'); if(hdrP) hdrP.textContent=T('app_sub');
   s('btnRecfg','btn_storage');
   s('btnLang','btn_lang');
 
-  // Tabs (already done via data-i18n but also update tab bar button text explicitly)
-  document.querySelectorAll('.tab').forEach(btn=>{
-    if(btn.dataset.i18n) btn.textContent=T(btn.dataset.i18n);
+  // Tabs
+  document.querySelectorAll('.tab[data-i18n]').forEach(btn=>btn.textContent=T(btn.dataset.i18n));
+
+  // ── TEAM TAB ──
+  s('ctTeam','ct_team');
+  s('btnAdd','btn_add');
+  p('nameIn','ph_name');
+  s('noteTeam','note_team');
+
+  // ── AVAILABILITY TAB ──
+  s('ctAvail','ct_avail');
+  s('btnWkPrev','btn_prev');
+  s('btnWkToday','btn_today');
+  s('btnWkRefresh','btn_refresh');
+  s('btnWkNext','btn_next');
+
+  // Legend labels (preserve the dot)
+  [['legAvail','leg_avail'],['legLate','leg_late'],['legPto','leg_pto'],['legExcl','leg_excl']].forEach(([id,key])=>{
+    const el=document.getElementById(id);
+    if(el){ const dot=el.querySelector('.ldot'); el.innerHTML=(dot?dot.outerHTML:'')+T(key); }
   });
 
-  // Availability
-  s('btnWkPrev','btn_prev'); s('btnWkToday','btn_today');
-  s('btnWkRefresh','btn_refresh'); s('btnWkNext','btn_next');
-  document.querySelectorAll('.leg').forEach((el,i)=>{
-    const keys=['leg_avail','leg_late','leg_pto','leg_excl'];
-    const dot=el.querySelector('.ldot');
-    if(dot && keys[i]) el.innerHTML=el.querySelector('.ldot').outerHTML+T(keys[i]);
-  });
+  s('noteAvail','note_avail',true);
 
-  // Schedule
-  s('schedManualToggle', document.getElementById('schedManualPanel')?.style.display==='none' ? 'ct_manual' : 'ct_manual_open');
-  s('btnGenerate','btn_gen'); s('btnRerand','btn_rerand');
-  s('btnRerandToday','btn_rerand_today'); s('btnRerandNext','btn_rerand_next');
-  s('btnToday','btn_today');
+  // Bulk edit
+  s('ctBulk','ct_bulk');
+  s('noteBulk','note_bulk');
+  s('lblBulkPeople','lbl_people');
+  s('lblBulkFrom','lbl_from');
+  s('lblBulkTo','lbl_to');
+  s('lblBulkStatus','lbl_status');
+  s('btnBulkApply','btn_apply');
 
-  // Schedule card titles
-  const todayCard = document.getElementById('schedTodayCard');
+  // Bulk status dropdown
+  const bs=document.getElementById('bulkStatus');
+  if(bs){ const v=bs.value; bs.innerHTML=`<option value="available">${T('av_available')}</option><option value="late">${T('av_late')}</option><option value="pto">${T('av_pto')}</option><option value="exclude">${T('av_exclude')}</option>`; bs.value=v; }
+
+  // Select all / None link in bulk people (rendered dynamically)
+  const bsa=document.getElementById('bulkSelAll');
+  if(bsa) bsa.textContent=T('btn_selall')+' / '+T('btn_selnone');
+
+  // CSV export
+  s('ctExport','ct_export');
+  s('noteExport','note_export');
+  s('lblMonth','lbl_month');
+  s('lblYear','lbl_year');
+  s('btnExportCsv','btn_export');
+
+  // Month options
+  const months=T('months_en');
+  if(months){ const em=document.getElementById('exportMonth'); if(em){ const v=em.value; em.querySelectorAll('option').forEach((o,i)=>{ if(months[i]) o.textContent=months[i]; }); em.value=v; } }
+
+  // ── SCHEDULE TAB ──
+  const todayCard=document.getElementById('schedTodayCard');
   if(todayCard) todayCard.querySelector('.ct').textContent=T('ct_today');
-  const nextCard = document.getElementById('schedNextCard');
+  const nextCard=document.getElementById('schedNextCard');
   if(nextCard) nextCard.querySelector('.ct').textContent=T('ct_next');
+  s('btnRerandToday','btn_rerand_today');
+  s('btnRerandNext','btn_rerand_next');
+  s('btnGenerate','btn_gen');
+  s('btnRerand','btn_rerand');
+  s('btnToday','btn_today');
+  // Manual lookup toggle label
+  const mt=document.getElementById('schedManualToggle');
+  if(mt){ const open=document.getElementById('schedManualPanel')?.style.display!=='none'; mt.textContent=T(open?'ct_manual_open':'ct_manual'); }
 
-  // Auto-send
-  s('btnASStart','btn_activate'); s('btnASStop','btn_stop'); s('btnASTest','btn_test');
+  // ── AUTO-SEND TAB ──
+  s('ctAutosend','ct_autosend');
+  s('lblWxTok','lbl_tok');
+  s('lblWxRoom','lbl_room');
+  ph('wxTok','ph_tok');
+  ph('wxRoom','ph_room');
+  s('btnASStart','btn_activate');
+  s('btnASStop','btn_stop');
+  s('btnASTest','btn_test');
+  s('noteAutosend','note_autosend',true);
+  // Auto-send status (only update if not mid-session active state)
+  const asEl=document.getElementById('asStatus');
+  if(asEl && asEl.classList.contains('toff')) asEl.innerHTML=T('as_inactive');
+  else if(asEl && asEl.classList.contains('ton')) asEl.innerHTML=T('as_active');
 
-  // Re-render availability table to pick up translated dropdown options
+  // ── RE-RENDER dynamic content ──
   renderAvail();
 
-  // Re-render schedule panels to pick up translated tags
   const todayDk=getThisWorkDay(), nextDk=getNextWorkDay();
   if(schedResults[todayDk]) renderSchedPanel(schedResults[todayDk],todayDk,'Today','schedHdToday','schedGridToday','msgTxtToday','cpBtnToday',true);
   if(schedResults[nextDk])  renderSchedPanel(schedResults[nextDk], nextDk, 'Next', 'schedHdNext', 'schedGridNext', 'msgTxtNext', 'cpBtnNext', false);
 
-  // Save preference
   lsRawSet('sched_lang', currentLang);
 }
 
@@ -1552,7 +1593,7 @@ function renderBulkPeople(){
   }
   // "Select all" toggle link + one chip per person
   container.innerHTML =
-    `<span class="bulk-select-all" id="bulkSelAll">Select all / None</span>` +
+    `<span class="bulk-select-all" id="bulkSelAll">${T('btn_selall')} / ${T('btn_selnone')}</span>` +
     team.map(n=>`<span class="bulk-chip" data-person="${n.replace(/"/g,'&quot;')}">${n}</span>`).join('');
 
   // Wire select-all toggle via delegation on container

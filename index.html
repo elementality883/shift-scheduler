@@ -62,8 +62,6 @@ body{color:var(--text);font-family:'DM Mono',monospace;padding:24px 16px 60px;}
 .sb code{color:var(--accent);background:rgba(0,229,160,0.08);padding:1px 4px;border-radius:3px;font-size:0.69rem;}
 .field-lbl{font-size:0.66rem;color:var(--muted);letter-spacing:0.07em;text-transform:uppercase;margin-bottom:4px;margin-top:10px;}
 .setup-inp{width:100%;background:#1e2330;border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.79rem;outline:none;transition:border-color 0.2s;}
-.masked-field{color:transparent;text-shadow:0 0 8px var(--text);letter-spacing:0.1em;}
-.masked-field.revealed{color:var(--text);text-shadow:none;letter-spacing:normal;}
 .setup-inp:focus{border-color:var(--accent);}
 .setup-inp::placeholder{color:var(--muted);}
 .setup-err{color:var(--warn);font-size:0.73rem;margin-top:6px;display:none;}
@@ -274,13 +272,13 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 
     <div class="field-lbl">API Key</div>
     <div style="position:relative;display:flex;align-items:center">
-      <input class="setup-inp masked-field" type="text" id="inpKey" placeholder="$2b$10$…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+      <input class="setup-inp" type="password" id="inpKey" placeholder="$2b$10$…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
       <button type="button" id="toggleKey" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px;line-height:1" title="Show/hide">👁</button>
     </div>
 
     <div class="field-lbl">Bin ID</div>
     <div style="position:relative;display:flex;align-items:center;margin-top:4px">
-      <input class="setup-inp masked-field" type="text" id="inpBin" placeholder="64a3f…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+      <input class="setup-inp" type="password" id="inpBin" placeholder="64a3f…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
       <button type="button" id="toggleBin" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px;line-height:1" title="Show/hide">👁</button>
     </div>
 
@@ -508,14 +506,14 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
         <div>
           <div class="fl" id="lblWxTok">WebEx Bot Token</div>
           <div style="position:relative;display:flex;align-items:center">
-            <input type="text" class="masked-field" id="wxTok" placeholder="Bearer token from developer.webex.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+            <input type="password" id="wxTok" placeholder="Bearer token from developer.webex.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
             <button type="button" id="toggleWxTok" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px;line-height:1" title="Show/hide">👁</button>
           </div>
         </div>
         <div>
           <div class="fl" id="lblWxRoom">WebEx Room / Space ID</div>
           <div style="position:relative;display:flex;align-items:center">
-            <input type="text" class="masked-field" id="wxRoom" placeholder="Room ID" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+            <input type="password" id="wxRoom" placeholder="Room ID" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
             <button type="button" id="toggleWxRoom" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px;line-height:1" title="Show/hide">👁</button>
           </div>
         </div>
@@ -755,15 +753,18 @@ async function loadAndLaunch(){
 }
 
 // ── Field visibility toggle ───────────────────────────────────────────────────
-// Uses CSS text-shadow blur rather than input type switching —
-// avoids browser security restrictions that clear password field values.
+// Saves value before switching type and restores it after — some browsers
+// clear the value when input type changes as a security measure.
 function toggleVis(fieldId, btnId){
   const inp = document.getElementById(fieldId);
   const btn = document.getElementById(btnId);
   if(!inp || !btn) return;
-  const revealed = inp.classList.toggle('revealed');
-  btn.style.opacity = revealed ? '1' : '0.4';
-  btn.title = revealed ? 'Hide' : 'Show';
+  const val  = inp.value;
+  const show = inp.type === 'password';
+  inp.type   = show ? 'text' : 'password';
+  inp.value  = val;
+  btn.textContent = show ? '🙈' : '👁';
+  btn.title  = show ? 'Hide' : 'Show';
 }
 
 // ── Error sanitisation ────────────────────────────────────────────────────────

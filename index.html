@@ -212,7 +212,7 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <h3>🔒 Enter Passphrase</h3>
     <p>Your stored credentials are encrypted. Enter your passphrase to unlock.</p>
     <div class="field-lbl">Passphrase</div>
-    <input class="setup-inp" type="password" id="inpUnlock" placeholder="Enter your passphrase…" style="margin-bottom:10px">
+    <input class="setup-inp" type="password" id="inpUnlock" placeholder="Enter your passphrase…" style="margin-bottom:10px" autocomplete="current-password" autocorrect="off" autocapitalize="off">
     <div class="errtxt" id="unlockErr"></div>
     <button class="btn btn-big" id="btnUnlock" style="margin-top:10px">🔓 Unlock</button>
   </div>
@@ -271,13 +271,19 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     </div>
 
     <div class="field-lbl">API Key</div>
-    <input class="setup-inp" type="text" id="inpKey" placeholder="$2b$10$…">
+    <div style="position:relative;display:flex;align-items:center">
+      <input class="setup-inp" type="password" id="inpKey" placeholder="$2b$10$…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+      <button type="button" onclick="toggleVis('inpKey',this)" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px" title="Show/hide">👁</button>
+    </div>
 
     <div class="field-lbl">Bin ID</div>
-    <input class="setup-inp" type="text" id="inpBin" placeholder="64a3f…" style="margin-top:4px">
+    <div style="position:relative;display:flex;align-items:center;margin-top:4px">
+      <input class="setup-inp" type="password" id="inpBin" placeholder="64a3f…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+      <button type="button" onclick="toggleVis('inpBin',this)" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px" title="Show/hide">👁</button>
+    </div>
 
     <div class="field-lbl" style="margin-top:10px">Passphrase <span style="color:var(--muted);font-size:0.65rem;font-weight:400;text-transform:none;letter-spacing:0">(encrypts your stored credentials)</span></div>
-    <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px">
+    <input class="setup-inp" type="password" id="inpPass" placeholder="Choose a passphrase…" style="margin-top:4px" autocomplete="new-password" autocorrect="off" autocapitalize="off">
 
     <!-- PIN fields — only shown when reconfiguring via ⚙ Storage -->
     <div id="pinChangeRow" style="display:none">
@@ -497,10 +503,20 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <div class="card">
       <div class="ct" id="ctAutosend">WebEx Auto-Send</div>
       <div style="display:grid;gap:10px">
-        <div><div class="fl" id="lblWxTok">WebEx Bot Token</div>
-          <input type="text" id="wxTok" placeholder="Bearer token from developer.webex.com"></div>
-        <div><div class="fl" id="lblWxRoom">WebEx Room / Space ID</div>
-          <input type="text" id="wxRoom" placeholder="Room ID"></div>
+        <div>
+          <div class="fl" id="lblWxTok">WebEx Bot Token</div>
+          <div style="position:relative;display:flex;align-items:center">
+            <input type="password" id="wxTok" placeholder="Bearer token from developer.webex.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+            <button type="button" onclick="toggleVis('wxTok',this)" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px" title="Show/hide">👁</button>
+          </div>
+        </div>
+        <div>
+          <div class="fl" id="lblWxRoom">WebEx Room / Space ID</div>
+          <div style="position:relative;display:flex;align-items:center">
+            <input type="password" id="wxRoom" placeholder="Room ID" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding-right:36px">
+            <button type="button" onclick="toggleVis('wxRoom',this)" style="position:absolute;right:8px;background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:4px" title="Show/hide">👁</button>
+          </div>
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
         <button class="btn" id="btnASStart">▶ Activate</button>
@@ -736,6 +752,75 @@ async function loadAndLaunch(){
   showApp();
 }
 
+// ── Field visibility toggle ───────────────────────────────────────────────────
+function toggleVis(fieldId, btn){
+  const inp = document.getElementById(fieldId);
+  if(!inp) return;
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.style.opacity = show ? '1' : '0.4';
+  btn.title = show ? 'Hide' : 'Show';
+}
+
+// ── Error sanitisation ────────────────────────────────────────────────────────
+// Strips API keys, Bin IDs, and URLs from error messages before displaying
+// to the user — prevents accidental credential exposure in the UI.
+function sanitiseErr(e){
+  let msg = (e && e.message) ? e.message : String(e);
+  // Remove anything that looks like an API key ($2b$10$...)
+  msg = msg.replace(/\$2b\$\d+\$[A-Za-z0-9./]+/g, '[key]');
+  // Remove JSONBin URLs (may contain bin ID)
+  msg = msg.replace(/https?:\/\/api\.jsonbin\.io[^\s]*/g, '[url]');
+  // Remove any remaining hex IDs (24+ char alphanumeric — typical bin/key format)
+  msg = msg.replace(/[a-f0-9]{24,}/gi, '[id]');
+  // Map common HTTP errors to friendly messages
+  if(msg.includes('401')) return 'Could not connect — check your API Key.';
+  if(msg.includes('404')) return 'Could not connect — check your Bin ID.';
+  if(msg.includes('429')) return 'Could not connect — too many requests. Try again shortly.';
+  if(msg.includes('fetch')) return 'Could not connect — check your internet connection.';
+  return 'Could not connect: ' + msg;
+}
+
+async function showApp(){
+// Auto-locks the app after IDLE_TIMEOUT ms of no user interaction.
+// Resets on any touch, click, or keypress.
+const IDLE_TIMEOUT = 15 * 60 * 1000; // 15 minutes
+let idleTimer = null;
+
+function resetIdleTimer(){
+  if(!document.getElementById('appWrap') ||
+     document.getElementById('appWrap').style.display==='none') return;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>{
+    // Lock the app — force re-entry of passphrase
+    stopPolling();
+    stopSchedPolling();
+    cryptoKey=null; wxToken=null; wxRoom=null; currentPin=null;
+    document.getElementById('appWrap').style.display='none';
+    document.getElementById('setupWrap').style.display='none';
+    const ul=document.getElementById('unlockWrap');
+    if(ul){
+      ul.style.display='';
+      document.getElementById('inpUnlock').value='';
+      const err=document.getElementById('unlockErr');
+      if(err){ err.textContent='Session timed out — please unlock again.'; err.style.display='block'; }
+    }
+    toast('🔒 Session timed out.');
+  }, IDLE_TIMEOUT);
+}
+
+function startIdleTimer(){
+  ['click','touchstart','keydown','mousemove','scroll'].forEach(ev=>
+    document.addEventListener(ev, resetIdleTimer, {passive:true})
+  );
+  resetIdleTimer();
+}
+
+function stopIdleTimer(){
+  clearTimeout(idleTimer);
+  idleTimer=null;
+}
+
 async function showApp(){
   document.getElementById('setupWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
@@ -761,11 +846,14 @@ async function showApp(){
   setTimeout(applyLang, 50);
   // Start polling since Availability tab is active by default on load
   startPolling();
+  // Start idle session timeout
+  startIdleTimer();
 }
 
 async function showSetup(){
   stopPolling();
   stopSchedPolling();
+  stopIdleTimer();
   document.getElementById('appWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('setupWrap').style.display='flex';
@@ -853,7 +941,7 @@ async function connect(){
       showApp();
     }catch(e){
       hideOv();
-      err.textContent='Could not connect: '+e.message;
+      err.textContent=sanitiseErr(e);
       err.style.display='block';
     }
 
@@ -914,7 +1002,7 @@ async function connect(){
     }catch(e){
       hideOv();
       jbKey=null; jbBin=null; cryptoKey=null;
-      err.textContent='Could not connect: '+e.message;
+      err.textContent=sanitiseErr(e);
       err.style.display='block';
     }
   }
@@ -1368,7 +1456,7 @@ function wireEvents(){
         toast('✅ Refreshed.');
       }
     }catch(e){
-      toast('⚠ Refresh failed: '+e.message);
+      toast('⚠ Refresh failed — check your connection.');
     }finally{
       btn.textContent='🔄 Refresh';
       btn.disabled=false;
@@ -1605,24 +1693,51 @@ function showPinModal(onSuccess){
   setTimeout(()=>inp.focus(), 50);
 }
 
+// ── PIN brute-force protection ────────────────────────────────────────────────
+// Counter lives in memory only — a page refresh resets it.
+// This defeats automated scripts while letting genuine users recover by refreshing.
+let pinAttempts = 0;
+const PIN_MAX_ATTEMPTS = 5;
+
 async function verifyPin(){
-  const inp    = document.getElementById('pinInput');
-  const err    = document.getElementById('pinErr');
+  const inp     = document.getElementById('pinInput');
+  const err     = document.getElementById('pinErr');
   const entered = inp.value;
   err.style.display='none';
+
   if(!entered){ err.textContent='Enter the PIN.'; err.style.display='block'; return; }
+
+  // Hard-locked after too many attempts
+  if(pinAttempts >= PIN_MAX_ATTEMPTS){
+    err.textContent='Too many incorrect attempts. Refresh the page to try again.';
+    err.style.display='block';
+    inp.value=''; inp.disabled=true;
+    document.getElementById('pinVerifyBtn') && (document.getElementById('pinVerifyBtn').disabled=true);
+    return;
+  }
+
   if(!currentPin){
-    // No PIN configured — allow through
+    pinAttempts=0;
     closePinModal(true);
     return;
   }
+
   if(entered === currentPin){
+    pinAttempts=0;
     closePinModal(true);
   } else {
-    err.textContent='Incorrect PIN. Try again.';
+    pinAttempts++;
+    const remaining = PIN_MAX_ATTEMPTS - pinAttempts;
+    if(remaining <= 0){
+      err.textContent='Too many incorrect attempts. Refresh the page to try again.';
+      inp.disabled=true;
+      document.getElementById('pinVerifyBtn') && (document.getElementById('pinVerifyBtn').disabled=true);
+    } else {
+      err.textContent=`Incorrect PIN — ${remaining} attempt${remaining===1?'':'s'} remaining.`;
+    }
     err.style.display='block';
     inp.value='';
-    inp.focus();
+    if(!inp.disabled) inp.focus();
   }
 }
 

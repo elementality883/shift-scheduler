@@ -424,7 +424,10 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
   <div class="tab-panel" id="tab-sched">
     <!-- Today's schedule -->
     <div class="card" id="schedTodayCard">
-      <div class="ct">📅 Today's Schedule</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="ct">📅 Today's Schedule</div>
+        <button class="btn btn-sec" id="btnRefreshToday" style="font-size:0.68rem;padding:4px 10px">🔄 Refresh</button>
+      </div>
       <div class="sched-hd" id="schedHdToday" style="margin-top:6px"></div>
       <div class="sg" id="schedGridToday" style="margin-top:8px"></div>
       <div style="margin-top:10px">
@@ -438,7 +441,10 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 
     <!-- Next work day schedule -->
     <div class="card" id="schedNextCard">
-      <div class="ct">📅 Next Work Day</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="ct">📅 Next Work Day</div>
+        <button class="btn btn-sec" id="btnRefreshNext" style="font-size:0.68rem;padding:4px 10px">🔄 Refresh</button>
+      </div>
       <div class="sched-hd" id="schedHdNext" style="margin-top:6px"></div>
       <div class="sg" id="schedGridNext" style="margin-top:8px"></div>
       <div style="margin-top:10px">
@@ -449,6 +455,7 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
         <button class="btn btn-sec" id="btnRerandNext">🔀 Re-randomise Next Day</button>
       </div>
     </div>
+    <p class="note" style="text-align:center;margin-top:-6px" id="noteSchedAuto">🔄 Auto-refreshes every 10 seconds · Changes sync across all browsers</p>
 
     <!-- Manual date lookup (collapsed by default) -->
     <div class="card">
@@ -747,6 +754,7 @@ async function showApp(){
 
 async function showSetup(){
   stopPolling();
+  stopSchedPolling();
   document.getElementById('appWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('setupWrap').style.display='flex';
@@ -1313,11 +1321,13 @@ function wireEvents(){
   document.addEventListener('visibilitychange', ()=>{
     if(document.visibilityState === 'visible'){
       checkDateRollover();
-      // Resume polling if availability tab is active
       const availPanel = document.getElementById('tab-avail');
       if(availPanel && availPanel.classList.contains('active')) startPolling();
+      const schedPanel = document.getElementById('tab-sched');
+      if(schedPanel && schedPanel.classList.contains('active')) startSchedPolling();
     } else {
-      stopPolling(); // pause while hidden — saves battery and API calls
+      stopPolling();
+      stopSchedPolling();
     }
   });
   window.addEventListener('focus', checkDateRollover);
@@ -1356,6 +1366,20 @@ function wireEvents(){
   on('btnWkNext',    'click', ()=>chWk(1));
   on('avBody',       'change', e=>{ const s=e.target.closest('select[data-name]'); if(s) setAv(s.dataset.name,s.dataset.date,s); });
   // Schedule
+  on('btnRefreshToday','click', async ()=>{
+    const btn=document.getElementById('btnRefreshToday');
+    btn.textContent='⏳'; btn.disabled=true;
+    await pollSchedule();
+    btn.textContent='🔄 Refresh'; btn.disabled=false;
+    toast('✅ Schedule refreshed.');
+  });
+  on('btnRefreshNext', 'click', async ()=>{
+    const btn=document.getElementById('btnRefreshNext');
+    btn.textContent='⏳'; btn.disabled=true;
+    await pollSchedule();
+    btn.textContent='🔄 Refresh'; btn.disabled=false;
+    toast('✅ Schedule refreshed.');
+  });
   on('btnRerandToday','click', ()=>{
     const dk=getThisWorkDay();
     if(lastSchedDk===dk) lastSchedResult=schedResults[dk]||null;
@@ -1436,13 +1460,62 @@ function stopPolling(){
   if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
 }
 
+let pollSchedTimer   = null;
+let lastSchedHash    = null;
+
+function hashSched(d){
+  const t = d.schedToday  ? JSON.stringify(d.schedToday)  : '';
+  const n = d.schedNextDay? JSON.stringify(d.schedNextDay): '';
+  return t + '|' + n;
+}
+
+async function pollSchedule(){
+  if(localOnly || !jbKey || !jbBin) return;
+  try{
+    const d = await jbRead();
+    const newHash = hashSched(d);
+    if(newHash !== lastSchedHash){
+      lastSchedHash = newHash;
+      const todayDk = getThisWorkDay(), nextDk = getNextWorkDay();
+      if(d.team)  team  = d.team;
+      if(d.avail) avail = d.avail;
+      if(d.schedToday  && d.schedToday.dk  === todayDk && Array.isArray(d.schedToday.slots)){
+        schedResults[todayDk] = d.schedToday.slots;
+        renderSchedPanel(d.schedToday.slots, todayDk, 'Today', 'schedHdToday','schedGridToday','msgTxtToday','cpBtnToday', true);
+      }
+      if(d.schedNextDay && d.schedNextDay.dk === nextDk && Array.isArray(d.schedNextDay.slots)){
+        schedResults[nextDk] = d.schedNextDay.slots;
+        renderSchedPanel(d.schedNextDay.slots, nextDk, 'Next', 'schedHdNext','schedGridNext','msgTxtNext','cpBtnNext', false);
+      }
+      // Subtle pulse on refresh buttons
+      ['btnRefreshToday','btnRefreshNext'].forEach(id=>{
+        const b=document.getElementById(id);
+        if(b){b.style.opacity='0.4';setTimeout(()=>b.style.opacity='',400);}
+      });
+    }
+  }catch{ /* silent */ }
+}
+
+function startSchedPolling(){
+  if(pollSchedTimer) return;
+  const d = {schedToday: schedResults[getThisWorkDay()] ? {slots:schedResults[getThisWorkDay()]} : null,
+             schedNextDay: schedResults[getNextWorkDay()] ? {slots:schedResults[getNextWorkDay()]} : null};
+  lastSchedHash = hashSched(d);
+  pollSchedTimer = setInterval(pollSchedule, POLL_INTERVAL);
+}
+
+function stopSchedPolling(){
+  if(pollSchedTimer){ clearInterval(pollSchedTimer); pollSchedTimer=null; }
+}
+
 function sw(id){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   const panel=document.getElementById('tab-'+id);
   if(panel) panel.classList.add('active');
-  if(id==='avail'){ renderAvail(); renderBulkPeople(); startPolling(); }
-  else { stopPolling(); }
+  if(id==='avail'){ renderAvail(); renderBulkPeople(); startPolling(); stopSchedPolling(); }
+  else if(id==='sched'){ startSchedPolling(); stopPolling(); }
+  else { stopPolling(); stopSchedPolling(); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1909,18 +1982,60 @@ function getThisWorkDay(){
   return fmtD(d);
 }
 
-function generateBoth(){
+// Generate today + next work day — uses stored schedules from JSONBin if available
+// so all browsers show the same schedule. Only generates fresh if nothing stored.
+async function generateBoth(forceRegenerate=false){
   const todayDk = getThisWorkDay();
   const nextDk  = getNextWorkDay();
-  lastGeneratedDate = todayDk; // track so date-rollover detection works
+  lastGeneratedDate = todayDk;
 
-  const todayRes = generate(todayDk, true);  // true = silent (no manual-lookup render)
+  // Try to load stored schedules from JSONBin first
+  if(!forceRegenerate && !localOnly && jbKey && jbBin){
+    try{
+      const d = await jbRead();
+      // Update team/avail from latest JSONBin data too
+      if(d.team) team = d.team;
+      if(d.avail) avail = d.avail;
+
+      const storedToday = d.schedToday;
+      const storedNext  = d.schedNextDay;
+      let usedStored    = false;
+
+      if(storedToday && storedToday.dk === todayDk && Array.isArray(storedToday.slots)){
+        schedResults[todayDk] = storedToday.slots;
+        renderSchedPanel(storedToday.slots, todayDk, 'Today', 'schedHdToday','schedGridToday','msgTxtToday','cpBtnToday', true);
+        usedStored = true;
+      }
+      if(storedNext && storedNext.dk === nextDk && Array.isArray(storedNext.slots)){
+        schedResults[nextDk] = storedNext.slots;
+        renderSchedPanel(storedNext.slots, nextDk, 'Next', 'schedHdNext','schedGridNext','msgTxtNext','cpBtnNext', false);
+        usedStored = true;
+      }
+      if(usedStored){
+        // Fill in any panels that had no stored schedule by generating fresh
+        if(!schedResults[todayDk]){
+          const r = generate(todayDk, true);
+          if(r) renderSchedPanel(r.result, r.dk, 'Today', 'schedHdToday','schedGridToday','msgTxtToday','cpBtnToday', true);
+        }
+        if(!schedResults[nextDk]){
+          const r = generate(nextDk, true);
+          if(r) renderSchedPanel(r.result, r.dk, 'Next', 'schedHdNext','schedGridNext','msgTxtNext','cpBtnNext', false);
+        }
+        scheduleSave();
+        return;
+      }
+    }catch(e){
+      // JSONBin unreachable — fall through to local generation
+    }
+  }
+
+  // No stored schedules or forced regenerate — generate fresh
+  const todayRes = generate(todayDk, true);
   const nextRes  = generate(nextDk,  true);
 
   if(todayRes) renderSchedPanel(todayRes.result, todayRes.dk, 'Today', 'schedHdToday','schedGridToday','msgTxtToday','cpBtnToday', true);
   if(nextRes)  renderSchedPanel(nextRes.result,  nextRes.dk,  'Next',  'schedHdNext', 'schedGridNext', 'msgTxtNext', 'cpBtnNext',  false);
 
-  // Persist both schedules to JSONBin so send-schedule.js can use them
   scheduleSave();
 }
 

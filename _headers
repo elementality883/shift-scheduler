@@ -1,8 +1,18 @@
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.jsonbin.io https://webexapis.com https://*.workers.dev; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+  # ── Shift Scheduler — Cloudflare Pages Security Headers ──────────────────
+  #
+  # IMPORTANT: Replace *.workers.dev in connect-src with your specific
+  # Cloudflare Worker URL to tighten the CSP further.
+  # e.g. https://shift-scheduler.yourname.workers.dev
+  #
+  # ─────────────────────────────────────────────────────────────────────────
+
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https://api.jsonbin.io https://webexapis.com https://*.workers.dev; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Cache-Control: no-store
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=()
+  Cache-Control: no-store, no-cache, must-revalidate
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin

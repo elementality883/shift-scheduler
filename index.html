@@ -918,8 +918,9 @@ async function doSave(){
   const encryptedRoom  = wxRoom     ? await encryptWx(wxRoom)      : null;
   const salt           = lsRaw(LS_SALT);
 
-  // Persist generated schedules so send-schedule.js can send without regenerating
-  const todayDk   = fmtD(new Date());
+  // Persist generated schedules so send-schedule.js can send without regenerating.
+  // Use getThisWorkDay() — not raw today — so weekend opens store under Monday's key.
+  const todayDk   = getThisWorkDay();
   const nextDk    = getNextWorkDay();
   const schedData = {};
   if(schedResults[todayDk]) schedData.schedToday   = { dk: todayDk, slots: schedResults[todayDk] };

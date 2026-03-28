@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Phone Shift Scheduler</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#006B5A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shift Sched">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap');
 :root{
@@ -2247,6 +2258,27 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 // ═══════════════════════════════════════════════════════
 if(document.readyState==='complete'){boot();}
 else{window.addEventListener('load',boot);}
+
+// ── PWA Service Worker Registration ──────────────────────────────────────────
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').then(reg=>{
+      console.log('[PWA] Service worker registered:', reg.scope);
+      // Check for updates on every load
+      reg.addEventListener('updatefound', ()=>{
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', ()=>{
+          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+            // New version available — show a subtle toast
+            toast('🔄 App updated — refresh for the latest version.');
+          }
+        });
+      });
+    }).catch(err=>{
+      console.warn('[PWA] Service worker registration failed:', err);
+    });
+  });
+}
 </script>
 </body>
 </html>

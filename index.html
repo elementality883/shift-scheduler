@@ -307,15 +307,16 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
     <p>Daily phone coverage · JSONBin synced · WebEx auto-send</p>
     <div class="srow">
       <div class="pill pi" id="syncPill"><div class="pdot"></div><span id="syncLbl">Ready</span></div>
+      <button class="rcfg" id="btnLang" style="margin-right:6px">🇯🇵 JP</button>
       <button class="rcfg" id="btnRecfg">⚙ Storage</button>
     </div>
   </div>
 
   <div class="tabs" id="tabBar">
-    <button class="tab active" data-tab="team">👥 Team</button>
-    <button class="tab" data-tab="avail">📅 Availability</button>
-    <button class="tab" data-tab="sched">⚡ Schedule</button>
-    <button class="tab" data-tab="autosend">🚀 Auto-Send</button>
+    <button class="tab active" data-tab="team"     data-i18n="tab_team">👥 Team</button>
+    <button class="tab"        data-tab="avail"    data-i18n="tab_avail">📅 Availability</button>
+    <button class="tab"        data-tab="sched"    data-i18n="tab_sched">⚡ Schedule</button>
+    <button class="tab"        data-tab="autosend" data-i18n="tab_auto">🚀 Auto-Send</button>
   </div>
 
   <!-- TEAM -->
@@ -738,6 +739,8 @@ async function showApp(){
   generateBoth();
   // Auto-activate auto-send if credentials are already in memory
   if(wxToken && wxRoom){ activateAS(wxToken, wxRoom); }
+  // Apply saved language preference after render
+  setTimeout(applyLang, 50);
 }
 
 async function showSetup(){
@@ -950,13 +953,278 @@ async function doSave(){
 function setSyncState(s){
   const pill=document.getElementById('syncPill'),lbl=document.getElementById('syncLbl');
   pill.className='pill';
-  const m={idle:['pi','● JSONBin'],saving:['ps','↑ Saving…'],ok:['po','✓ Saved'],err:['pe','⚠ Error'],local:['pi','○ Local only']};
-  const[c,t]=m[s]||m.idle; pill.classList.add(c); lbl.textContent=t;
+  const m={idle:['pi',T('sync_idle')],saving:['ps',T('sync_saving')],ok:['po',T('sync_ok')],err:['pe',T('sync_err')],local:['pi',T('sync_local')]};
+  const[c,txt]=m[s]||m.idle; pill.classList.add(c); lbl.textContent=txt;
 }
 
 // ═══════════════════════════════════════════════════════
 // WIRE EVENTS  (zero inline handlers — CSP safe)
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// INTERNATIONALISATION (EN / JA)
+// ═══════════════════════════════════════════════════════
+let currentLang = lsRaw('sched_lang') || 'en';
+
+const LANG = {
+  en: {
+    // Header / sync
+    sync_idle:'● JSONBin', sync_saving:'↑ Saving…', sync_ok:'✓ Saved',
+    sync_err:'⚠ Error', sync_local:'○ Local only',
+    btn_storage:'⚙ Storage', btn_lang:'🇯🇵 JP',
+    app_sub:'Daily phone coverage · JSONBin synced · WebEx auto-send',
+
+    // Tabs
+    tab_team:'👥 Team', tab_avail:'📅 Availability',
+    tab_sched:'⚡ Schedule', tab_auto:'🚀 Auto-Send',
+
+    // Team tab
+    ct_team:'Team Members',
+    lbl_name:'Name', ph_name:'Enter name…',
+    btn_add:'＋ Add',
+    note_team:'Changes save automatically and sync to everyone who has the same Bin ID.',
+
+    // Availability tab
+    ct_avail:'Weekly Availability & Late Shifts',
+    btn_prev:'← Prev', btn_today:'📅 Today',
+    btn_refresh:'🔄 Refresh', btn_next:'Next →',
+    leg_avail:'Available', leg_late:'Late Shift',
+    leg_pto:'PTO / Absent', leg_excl:'Exclude',
+    note_avail:'<strong>Late Shift</strong> = covers 12:00–13:00 & 14:00–15:00 only — not randomised into other slots. <strong>PTO / Exclude</strong> = removed from all assignments that day.',
+    av_available:'✅ Available', av_late:'🕐 Late Shift',
+    av_pto:'🌴 PTO', av_exclude:'🚫 Exclude',
+
+    // Bulk edit
+    ct_bulk:'Bulk Edit',
+    note_bulk:'Apply a status to one or more people across a date range. Weekends are skipped automatically.',
+    lbl_people:'People', lbl_from:'From', lbl_to:'To', lbl_status:'Status',
+    btn_selall:'Select all', btn_selnone:'None',
+    btn_apply:'✅ Apply to All Selected Days',
+
+    // Schedule tab
+    ct_today:"📅 Today's Schedule", ct_next:'📅 Next Work Day',
+    ct_manual:'🔍 Look Up Another Date ▾', ct_manual_open:'🔍 Look Up Another Date ▲',
+    lbl_date:'Date', btn_gen:'⚡ Generate Schedule',
+    btn_rerand_today:'🔀 Re-randomise Today', btn_rerand_next:'🔀 Re-randomise Next Day',
+    btn_rerand:'🔀 Re-randomise', btn_copy:'Copy', btn_copied:'Copied!',
+
+    // Auto-send tab
+    ct_autosend:'WebEx Auto-Send',
+    lbl_tok:'WebEx Bot Token', ph_tok:'Bearer token from developer.webex.com',
+    lbl_room:'WebEx Room / Space ID', ph_room:'Room ID',
+    btn_activate:'▶ Activate', btn_stop:'⏹ Stop', btn_test:'📤 Test Now',
+    as_inactive:'Auto-send is <strong>inactive</strong>.',
+    as_active:"Auto-send <strong>active</strong> — sends updated schedule when today's availability changes.",
+    note_autosend:'When active, any availability change made for <strong>today</strong> will automatically send an updated schedule to your WebEx room.',
+
+    // CSV export
+    ct_export:'Export CSV',
+    lbl_month:'Month', lbl_year:'Year',
+    btn_export:'⬇ Download CSV',
+
+    // Past-week lock
+    lock_badge:'🔒 Locked — click to unlock',
+    lock_title:'🔒 Past Week Locked',
+    lock_sub:'Enter the admin PIN to edit availability for previous weeks.',
+    lock_ph:'Enter PIN…', btn_cancel:'Cancel', btn_unlock:'Unlock →',
+    toast_unlocked:'🔓 Past weeks unlocked for this session.',
+
+    // PIN setup modal
+    pin_setup_title:'🔐 Set Admin PIN',
+    pin_setup_sub:'No PIN is set yet. Create a PIN to protect previous weeks from being edited. All team members will need to enter this PIN to edit past availability.',
+    pin_setup_ph1:'Choose a PIN…', pin_setup_ph2:'Confirm PIN…',
+    btn_pin_set:'Set PIN & Continue →',
+
+    // Setup screen
+    setup_sub:'One-time setup — takes about 3 minutes.',
+    lbl_apikey:'API Key', lbl_binid:'Bin ID',
+    lbl_pass:'Passphrase', lbl_pass_note:'(encrypts your stored credentials)',
+    lbl_pin:'Admin PIN', lbl_pin_note:'(locks editing of previous weeks for all users)',
+    lbl_currpin:'Verify Current PIN', lbl_currpin_note:'(required to change passphrase or PIN)',
+    ph_key:'$2b$10$…', ph_bin:'64a3f…',
+    ph_pass:'Choose a passphrase…', ph_pin_new:'Enter new PIN to change…',
+    ph_currpin:'Enter your current PIN to unlock changes…',
+    ph_pass_reconfig:'New passphrase (leave blank to keep current)',
+    btn_connect:'Connect →', btn_local:'Use locally only (no shared storage)',
+
+    // Unlock screen
+    unlock_title:'🔒 Enter Passphrase',
+    unlock_sub:'Your stored credentials are encrypted. Enter your passphrase to unlock.',
+    lbl_unlock:'Passphrase', ph_unlock:'Enter your passphrase…',
+    btn_unlock_go:'🔓 Unlock',
+
+    // Schedule message
+    msg_sched:'📞 Phone Shift Schedule',
+    msg_late:'🕐 Late shift: 12:00–13:00 and 14:00–15:00.',
+    msg_pto:'🌴 Out on PTO:',
+    msg_everyone:'🎉 The Whole Family Is Here!',
+    msg_great:'Have a great day! 🙌',
+    msg_updated:'🔄 UPDATED — 📞 Phone Shift Schedule',
+    msg_update_note:'⚠ This schedule was updated due to an availability change.',
+    msg_late_slot:'*(late shift)*',
+    past_tag:'Past',
+    slot_late_tag:'Late Slot',
+    slot_no_late:'No late assigned',
+  },
+
+  ja: {
+    sync_idle:'● JSONBin', sync_saving:'↑ 保存中…', sync_ok:'✓ 保存済',
+    sync_err:'⚠ エラー', sync_local:'○ ローカルのみ',
+    btn_storage:'⚙ 設定', btn_lang:'🇬🇧 EN',
+    app_sub:'毎日の電話当番 · JSONBin同期 · WebEx自動送信',
+
+    tab_team:'👥 チーム', tab_avail:'📅 勤務状況',
+    tab_sched:'⚡ スケジュール', tab_auto:'🚀 自動送信',
+
+    ct_team:'チームメンバー',
+    lbl_name:'名前', ph_name:'名前を入力…',
+    btn_add:'＋ 追加',
+    note_team:'変更は自動保存され、同じBin IDを持つ全員に同期されます。',
+
+    ct_avail:'週間勤務状況・遅番',
+    btn_prev:'← 前へ', btn_today:'📅 今日',
+    btn_refresh:'🔄 更新', btn_next:'次へ →',
+    leg_avail:'対応可', leg_late:'遅番',
+    leg_pto:'休暇', leg_excl:'対象外',
+    note_avail:'<strong>遅番</strong> = 12:00–13:00・14:00–15:00のみ担当。他のスロットにはランダム配置されません。<strong>休暇・対象外</strong> = その日の全スロットから除外。',
+    av_available:'✅ 対応可', av_late:'🕐 遅番',
+    av_pto:'🌴 休暇', av_exclude:'🚫 対象外',
+
+    ct_bulk:'一括編集',
+    note_bulk:'日付範囲内の一人または複数人に状態を適用します。週末は自動でスキップされます。',
+    lbl_people:'担当者', lbl_from:'開始日', lbl_to:'終了日', lbl_status:'状態',
+    btn_selall:'全員選択', btn_selnone:'選択解除',
+    btn_apply:'✅ 選択した全日程に適用',
+
+    ct_today:'📅 本日のスケジュール', ct_next:'📅 次の営業日',
+    ct_manual:'🔍 別の日付を検索 ▾', ct_manual_open:'🔍 別の日付を検索 ▲',
+    lbl_date:'日付', btn_gen:'⚡ スケジュール生成',
+    btn_rerand_today:'🔀 本日を再抽選', btn_rerand_next:'🔀 翌日を再抽選',
+    btn_rerand:'🔀 再抽選', btn_copy:'コピー', btn_copied:'コピーしました！',
+
+    ct_autosend:'WebEx 自動送信',
+    lbl_tok:'WebEx Botトークン', ph_tok:'developer.webex.comのBearerトークン',
+    lbl_room:'WebEx ルーム / スペースID', ph_room:'ルームID',
+    btn_activate:'▶ 有効化', btn_stop:'⏹ 停止', btn_test:'📤 テスト送信',
+    as_inactive:'自動送信は<strong>無効</strong>です。',
+    as_active:'自動送信<strong>有効</strong> — 本日の勤務状況が変更された場合にスケジュールを送信します。',
+    note_autosend:'有効時は<strong>本日</strong>の勤務状況が変更されると、最新のスケジュールが自動でWebExルームに送信されます。',
+
+    ct_export:'CSVエクスポート',
+    lbl_month:'月', lbl_year:'年',
+    btn_export:'⬇ CSVダウンロード',
+
+    lock_badge:'🔒 ロック中 — クリックして解除',
+    lock_title:'🔒 過去週ロック中',
+    lock_sub:'過去の週の勤務状況を編集するには管理者PINを入力してください。',
+    lock_ph:'PINを入力…', btn_cancel:'キャンセル', btn_unlock:'解除 →',
+    toast_unlocked:'🔓 今回のセッションで過去週の編集が解除されました。',
+
+    pin_setup_title:'🔐 管理者PINの設定',
+    pin_setup_sub:'PINが未設定です。過去週の誤編集を防ぐためにPINを作成してください。',
+    pin_setup_ph1:'PINを選択…', pin_setup_ph2:'PINを確認…',
+    btn_pin_set:'PINを設定して続ける →',
+
+    setup_sub:'初回設定 — 約3分で完了します。',
+    lbl_apikey:'APIキー', lbl_binid:'Bin ID',
+    lbl_pass:'パスフレーズ', lbl_pass_note:'(保存された認証情報を暗号化します)',
+    lbl_pin:'管理者PIN', lbl_pin_note:'(全ユーザーの過去週編集をロックします)',
+    lbl_currpin:'現在のPINを確認', lbl_currpin_note:'(パスフレーズまたはPINの変更に必要)',
+    ph_key:'$2b$10$…', ph_bin:'64a3f…',
+    ph_pass:'パスフレーズを選択…', ph_pin_new:'新しいPINを入力…',
+    ph_currpin:'現在のPINを入力してください…',
+    ph_pass_reconfig:'新しいパスフレーズ（変更しない場合は空欄）',
+    btn_connect:'接続 →', btn_local:'ローカルのみ使用（共有ストレージなし）',
+
+    unlock_title:'🔒 パスフレーズを入力',
+    unlock_sub:'保存された認証情報は暗号化されています。解除するにはパスフレーズを入力してください。',
+    lbl_unlock:'パスフレーズ', ph_unlock:'パスフレーズを入力…',
+    btn_unlock_go:'🔓 解除',
+
+    msg_sched:'📞 電話当番スケジュール',
+    msg_late:'🕐 遅番: 12:00–13:00・14:00–15:00。',
+    msg_pto:'🌴 休暇中:',
+    msg_everyone:'🎉 全員出勤！',
+    msg_great:'良い一日を！ 🙌',
+    msg_updated:'🔄 更新済 — 📞 電話当番スケジュール',
+    msg_update_note:'⚠ 勤務状況の変更によりスケジュールが更新されました。',
+    msg_late_slot:'*(遅番)*',
+    past_tag:'終了',
+    slot_late_tag:'遅番スロット',
+    slot_no_late:'遅番未設定',
+  }
+};
+
+function T(key){ return (LANG[currentLang]||LANG.en)[key] || (LANG.en)[key] || key; }
+
+function applyLang(){
+  // Tab buttons
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key=el.dataset.i18n;
+    if(el.tagName==='INPUT'){ el.placeholder=T(key); }
+    else{ el.textContent=T(key); }
+  });
+
+  // Specific elements that need updating
+  const s = (id,key,html=false) => {
+    const el=document.getElementById(id);
+    if(el){ if(html) el.innerHTML=T(key); else el.textContent=T(key); }
+  };
+  const p = (id,key) => {
+    const el=document.getElementById(id);
+    if(el) el.placeholder=T(key);
+  };
+
+  // Header
+  document.querySelector('.hdr p') && (document.querySelector('.hdr p').textContent=T('app_sub'));
+  s('btnRecfg','btn_storage');
+  s('btnLang','btn_lang');
+
+  // Tabs (already done via data-i18n but also update tab bar button text explicitly)
+  document.querySelectorAll('.tab').forEach(btn=>{
+    if(btn.dataset.i18n) btn.textContent=T(btn.dataset.i18n);
+  });
+
+  // Availability
+  s('btnWkPrev','btn_prev'); s('btnWkToday','btn_today');
+  s('btnWkRefresh','btn_refresh'); s('btnWkNext','btn_next');
+  document.querySelectorAll('.leg').forEach((el,i)=>{
+    const keys=['leg_avail','leg_late','leg_pto','leg_excl'];
+    const dot=el.querySelector('.ldot');
+    if(dot && keys[i]) el.innerHTML=el.querySelector('.ldot').outerHTML+T(keys[i]);
+  });
+
+  // Schedule
+  s('schedManualToggle', document.getElementById('schedManualPanel')?.style.display==='none' ? 'ct_manual' : 'ct_manual_open');
+  s('btnGenerate','btn_gen'); s('btnRerand','btn_rerand');
+  s('btnRerandToday','btn_rerand_today'); s('btnRerandNext','btn_rerand_next');
+  s('btnToday','btn_today');
+
+  // Schedule card titles
+  const todayCard = document.getElementById('schedTodayCard');
+  if(todayCard) todayCard.querySelector('.ct').textContent=T('ct_today');
+  const nextCard = document.getElementById('schedNextCard');
+  if(nextCard) nextCard.querySelector('.ct').textContent=T('ct_next');
+
+  // Auto-send
+  s('btnASStart','btn_activate'); s('btnASStop','btn_stop'); s('btnASTest','btn_test');
+
+  // Re-render availability table to pick up translated dropdown options
+  renderAvail();
+
+  // Re-render schedule panels to pick up translated tags
+  const todayDk=getThisWorkDay(), nextDk=getNextWorkDay();
+  if(schedResults[todayDk]) renderSchedPanel(schedResults[todayDk],todayDk,'Today','schedHdToday','schedGridToday','msgTxtToday','cpBtnToday',true);
+  if(schedResults[nextDk])  renderSchedPanel(schedResults[nextDk], nextDk, 'Next', 'schedHdNext', 'schedGridNext', 'msgTxtNext', 'cpBtnNext', false);
+
+  // Save preference
+  lsRawSet('sched_lang', currentLang);
+}
+
+function toggleLang(){
+  currentLang = currentLang==='en' ? 'ja' : 'en';
+  applyLang();
+}
+
 function wireEvents(){
   // Unlock screen
   on('btnUnlock',    'click', unlock);
@@ -982,6 +1250,7 @@ function wireEvents(){
   on('inpPass',      'keydown', e=>{ if(e.key==='Enter') connect(); });
   on('inpCurrPin',   'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header
+  on('btnLang',      'click', toggleLang);
   on('btnRecfg',     'click', showSetup);
   // Tabs — delegate
   on('tabBar',       'click', e=>{ const b=e.target.closest('[data-tab]'); if(b) sw(b.dataset.tab); });
@@ -1164,7 +1433,7 @@ function closePinModal(success){
   document.getElementById('pinErr').style.display='none';
   if(success){
     pastWeekUnlocked=true;
-    toast('🔓 Past weeks unlocked for this session.');
+    toast(T('toast_unlocked'));
     renderAvail(); // re-render without lock styling
     if(pendingPinAction){ pendingPinAction(); }
   }
@@ -1189,7 +1458,7 @@ async function renderAvail(){
 
   // Week label with lock badge if locked
   const lockBadge = locked
-    ? ` <span style="font-size:0.6rem;background:rgba(255,107,53,0.12);color:var(--warn);border:1px solid rgba(255,107,53,0.3);border-radius:4px;padding:1px 7px;vertical-align:middle;cursor:pointer;" id="pastWeekLockBadge">🔒 Locked — click to unlock</span>`
+    ? ` <span style="font-size:0.6rem;background:rgba(255,107,53,0.12);color:var(--warn);border:1px solid rgba(255,107,53,0.3);border-radius:4px;padding:1px 7px;vertical-align:middle;cursor:pointer;" id="pastWeekLockBadge">${T('lock_badge')}</span>`
     : past && !storedPin ? '' // past but no PIN set — freely editable
     : '';
 
@@ -1209,10 +1478,10 @@ async function renderAvail(){
       return`<td><div class="asel ${c}" style="display:flex;align-items:center;justify-content:center;opacity:0.6;cursor:not-allowed;font-size:0.64rem;padding:4px;">${labels[v]||'✅ Available'}</div></td>`;
     }
     return`<td><select class="asel ${c}" data-name="${name.replace(/"/g,'&quot;')}" data-date="${dk}">
-      <option value="available" ${v==='available'?'selected':''}>✅ Available</option>
-      <option value="late"      ${v==='late'     ?'selected':''}>🕐 Late Shift</option>
-      <option value="pto"       ${v==='pto'      ?'selected':''}>🌴 PTO</option>
-      <option value="exclude"   ${v==='exclude'  ?'selected':''}>🚫 Exclude</option>
+      <option value="available" ${v==='available'?'selected':''}>${T('av_available')}</option>
+      <option value="late"      ${v==='late'     ?'selected':''}>${T('av_late')}</option>
+      <option value="pto"       ${v==='pto'      ?'selected':''}>${T('av_pto')}</option>
+      <option value="exclude"   ${v==='exclude'  ?'selected':''}>${T('av_exclude')}</option>
     </select></td>`;
   }).join('')+'</tr>').join('');
 }
@@ -1546,9 +1815,9 @@ function renderSchedPanel(result, dk, label, hdId, gridId, msgId, cpId, isToday)
   document.getElementById(gridId).innerHTML = result.map((s,i)=>{
     const badges = s.assigned.map(n=>`<span class="badge ${isLate(n,dk)?'bl':'bn'}">${n}${isLate(n,dk)?' 🕐':''}</span>`).join('');
     let tag='';
-    if(s.past)                    tag=`<span class="past-tag">Past</span>`;
-    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
-    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
+    if(s.past)                    tag=`<span class="past-tag">${T('past_tag')}</span>`;
+    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">${T('slot_late_tag')}</span>`;
+    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">${T('slot_no_late')}</span>`;
     const pastClass = s.past ? ' past' : '';
     return`<div class="slotrow${pastClass}" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
   }).join('');
@@ -1605,9 +1874,9 @@ function renderSched(result,dk){
   document.getElementById('schedGrid').innerHTML=result.map((s,i)=>{
     const badges=s.assigned.map(n=>`<span class="badge ${isLate(n,dk)?'bl':'bn'}">${n}${isLate(n,dk)?' 🕐':''}</span>`).join('');
     let tag='';
-    if(s.past)                   tag=`<span class="past-tag">Past</span>`;
-    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
-    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
+    if(s.past)                   tag=`<span class="past-tag">${T('past_tag')}</span>`;
+    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">${T('slot_late_tag')}</span>`;
+    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">${T('slot_no_late')}</span>`;
     const pastClass = s.past ? ' past' : '';
     return`<div class="slotrow${pastClass}" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
   }).join('');
@@ -1623,16 +1892,16 @@ function renderSched(result,dk){
 function getPtoLine(dk){
   const ptoNames=team.filter(n=>getSt(n,dk)==='pto');
   return ptoNames.length>0
-    ? `🌴 Out on PTO: ${ptoNames.join(', ')}`
-    : `🎉 The Whole Family Is Here!`;
+    ? `${T('msg_pto')} ${ptoNames.join(', ')}`
+    : T('msg_everyone');
 }
 
 function buildMsg(result,hd,dk){
-  return`📞 Phone Shift Schedule — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?'  *(late shift)*':''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n🕐 Late shift: 12:00–13:00 and 14:00–15:00.\n${getPtoLine(dk)}\nHave a great day! 🙌`;
+  return`${T('msg_sched')} — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?`  ${T('msg_late_slot')}`:''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n${T('msg_late')}\n${getPtoLine(dk)}\n${T('msg_great')}`;
 }
 
 function buildUpdatedMsg(result,hd,dk){
-  return`🔄 UPDATED — Phone Shift Schedule — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?'  *(late shift)*':''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n🕐 Late shift: 12:00–13:00 and 14:00–15:00.\n${getPtoLine(dk)}\n⚠ This schedule was updated due to an availability change.\nHave a great day! 🙌`;
+  return`${T('msg_updated')} — ${hd}\n━━━━━━━━━━━━━━━━━━━━━━━\n${result.map(s=>`  ${s.time}  →  ${s.assigned.join(' · ')}${s.lateOnly&&s.hasLate?`  ${T('msg_late_slot')}`:''}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━\n${T('msg_late')}\n${getPtoLine(dk)}\n${T('msg_update_note')}\n${T('msg_great')}`;
 }
 
 function copyMsg(){
@@ -1655,7 +1924,7 @@ async function activateAS(tok, room){
   el('wxTok').value=tok; el('wxRoom').value=room;
   asActive=true;
   el('asStatus').className='tbox ton';
-  el('asStatus').innerHTML=`Auto-send <strong>active</strong> — sends updated schedule when today\'s availability changes.`;
+  el('asStatus').innerHTML=T('as_active');
   toast('Auto-send activated!');
   // Persist to JSONBin so credentials are available to all users
   scheduleSave();
@@ -1671,7 +1940,7 @@ async function startAS(){
 function stopAS(){
   asActive=false;
   document.getElementById('asStatus').className='tbox toff';
-  document.getElementById('asStatus').innerHTML='Auto-send is <strong>inactive</strong>.';
+  document.getElementById('asStatus').innerHTML=T('as_inactive');
 }
 
 // Returns the next work day after the current work day (Mon–Fri only).

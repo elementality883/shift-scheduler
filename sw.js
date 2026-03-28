@@ -2,7 +2,7 @@
 // Caches the app shell so it loads instantly and works offline.
 // When a new version is deployed, the cache is refreshed automatically.
 
-const CACHE_NAME = 'shift-scheduler-v0.94';
+const CACHE_NAME = 'shift-scheduler-v0.95';
 
 // Files to cache for offline use — the app shell
 const CACHE_FILES = [

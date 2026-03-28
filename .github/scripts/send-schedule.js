@@ -38,10 +38,19 @@ function nowLocal(){
 function fmtDate(d){
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
 }
-function getToday(){ return fmtDate(nowLocal()); }
+// Returns today if it's a weekday, otherwise the next Monday.
+// Saturday → Monday, Sunday → Monday, Mon–Fri → today.
+function getThisWorkDay(){
+  const d = nowLocal();
+  const day = d.getUTCDay();
+  if(day === 6) d.setUTCDate(d.getUTCDate()+2); // Saturday → Monday
+  if(day === 0) d.setUTCDate(d.getUTCDate()+1); // Sunday  → Monday
+  return fmtDate(d);
+}
+// Returns the next work day after getThisWorkDay — never duplicates.
 function getNextWorkDay(){
-  const d=nowLocal();
-  do{d.setUTCDate(d.getUTCDate()+1);}while(d.getUTCDay()===0||d.getUTCDay()===6);
+  const d = new Date(getThisWorkDay()+'T00:00:00Z');
+  do{ d.setUTCDate(d.getUTCDate()+1); }while(d.getUTCDay()===0||d.getUTCDay()===6);
   return fmtDate(d);
 }
 function friendlyDate(dk){
@@ -109,7 +118,7 @@ async function sendToWebEx(message){
 
 async function main(){
   const isEvening = SEND_TYPE==='evening';
-  const targetDk  = isEvening ? getNextWorkDay() : getToday();
+  const targetDk  = isEvening ? getNextWorkDay() : getThisWorkDay();
   const hd        = friendlyDate(targetDk);
   const storeKey  = isEvening ? 'schedNextDay' : 'schedToday';
 

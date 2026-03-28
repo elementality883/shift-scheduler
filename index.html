@@ -741,9 +741,12 @@ async function showApp(){
   if(wxToken && wxRoom){ activateAS(wxToken, wxRoom); }
   // Apply saved language preference after render
   setTimeout(applyLang, 50);
+  // Start polling since Availability tab is active by default on load
+  startPolling();
 }
 
 async function showSetup(){
+  stopPolling();
   document.getElementById('appWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('setupWrap').style.display='flex';
@@ -1296,6 +1299,29 @@ function wireEvents(){
   on('inpCurrPin',   'keydown', e=>{ if(e.key==='Enter') connect(); });
   // App header
   on('btnLang',      'click', toggleLang);
+  // Auto-refresh when tab becomes visible again or window regains focus.
+  // If the date has changed since the last generate, re-run generateBoth()
+  // so Today and Next Work Day always reflect the current date.
+  let lastGeneratedDate = null;
+  function checkDateRollover(){
+    const currentWorkDay = getThisWorkDay();
+    if(lastGeneratedDate && lastGeneratedDate !== currentWorkDay){
+      console.log('[Shift Scheduler] Date changed — refreshing schedules');
+      generateBoth();
+    }
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible'){
+      checkDateRollover();
+      // Resume polling if availability tab is active
+      const availPanel = document.getElementById('tab-avail');
+      if(availPanel && availPanel.classList.contains('active')) startPolling();
+    } else {
+      stopPolling(); // pause while hidden — saves battery and API calls
+    }
+  });
+  window.addEventListener('focus', checkDateRollover);
+
   on('btnRecfg',     'click', showSetup);
   // Tabs — delegate
   on('tabBar',       'click', e=>{ const b=e.target.closest('[data-tab]'); if(b) sw(b.dataset.tab); });
@@ -1367,12 +1393,56 @@ function on(id,ev,fn){ const el=document.getElementById(id); if(el) el.addEventL
 // ═══════════════════════════════════════════════════════
 // TABS
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// LIVE POLLING — auto-refresh availability from JSONBin
+// ═══════════════════════════════════════════════════════
+const POLL_INTERVAL = 10000; // 10 seconds
+let pollTimer       = null;
+let lastDataHash    = null;
+
+function hashData(t, a){
+  // Simple hash of team + avail for change detection — no crypto needed
+  return JSON.stringify({t, a});
+}
+
+async function pollAvailability(){
+  if(localOnly || !jbKey || !jbBin) return;
+  try{
+    const d = await jbRead();
+    const newHash = hashData(d.team||[], d.avail||{});
+    if(newHash !== lastDataHash){
+      lastDataHash = newHash;
+      team  = d.team  || [];
+      avail = d.avail || {};
+      renderTeam();
+      renderAvail();
+      renderBulkPeople();
+      // Subtle indicator — brief pulse on the refresh button
+      const btn = document.getElementById('btnWkRefresh');
+      if(btn){ btn.style.opacity='0.5'; setTimeout(()=>btn.style.opacity='',400); }
+    }
+  }catch{
+    // Silent fail — network blip shouldn't show an error
+  }
+}
+
+function startPolling(){
+  if(pollTimer) return; // already running
+  lastDataHash = hashData(team, avail); // baseline so first poll doesn't re-render needlessly
+  pollTimer = setInterval(pollAvailability, POLL_INTERVAL);
+}
+
+function stopPolling(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+}
+
 function sw(id){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   const panel=document.getElementById('tab-'+id);
   if(panel) panel.classList.add('active');
-  if(id==='avail'){ renderAvail(); renderBulkPeople(); }
+  if(id==='avail'){ renderAvail(); renderBulkPeople(); startPolling(); }
+  else { stopPolling(); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1842,6 +1912,7 @@ function getThisWorkDay(){
 function generateBoth(){
   const todayDk = getThisWorkDay();
   const nextDk  = getNextWorkDay();
+  lastGeneratedDate = todayDk; // track so date-rollover detection works
 
   const todayRes = generate(todayDk, true);  // true = silent (no manual-lookup render)
   const nextRes  = generate(nextDk,  true);

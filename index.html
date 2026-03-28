@@ -867,6 +867,10 @@ async function connect(){
         await LS.set(LSK, jbKey);
         await LS.set(LSB, jbBin);
         currentPin = decrypted;
+        // Decrypt WebEx credentials from the same JSONBin response
+        wxToken = d.wxTok  ? await decryptWx(d.wxTok)  : null;
+        wxRoom  = d.wxRoom ? await decryptWx(d.wxRoom)  : null;
+        team=d.team||[]; avail=d.avail||{};
         localOnly=false;
         hideOv();
         showApp();

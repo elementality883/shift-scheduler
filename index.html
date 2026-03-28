@@ -721,8 +721,8 @@ async function showApp(){
   document.getElementById('setupWrap').style.display='none';
   document.getElementById('unlockWrap').style.display='none';
   document.getElementById('appWrap').style.display='block';
-  document.getElementById('schedDate').value=fmtD(new Date());
-  const todayStr=fmtD(new Date());
+  document.getElementById('schedDate').value=getThisWorkDay();
+  const todayStr=getThisWorkDay();
   const bf=document.getElementById('bulkFrom'), bt=document.getElementById('bulkTo');
   if(bf&&!bf.value) bf.value=todayStr;
   if(bt&&!bt.value) bt.value=todayStr;
@@ -1016,8 +1016,7 @@ function wireEvents(){
   on('avBody',       'change', e=>{ const s=e.target.closest('select[data-name]'); if(s) setAv(s.dataset.name,s.dataset.date,s); });
   // Schedule
   on('btnRerandToday','click', ()=>{
-    const dk=fmtD(new Date());
-    // Clear stored result so generate() re-randomises (locking past slots)
+    const dk=getThisWorkDay();
     if(lastSchedDk===dk) lastSchedResult=schedResults[dk]||null;
     const res=generate(dk, true);
     if(res){ renderSchedPanel(res.result,res.dk,'Today','schedHdToday','schedGridToday','msgTxtToday','cpBtnToday',true); scheduleSave(); }
@@ -1030,7 +1029,7 @@ function wireEvents(){
     if(res){ renderSchedPanel(res.result,res.dk,'Next','schedHdNext','schedGridNext','msgTxtNext','cpBtnNext',false); scheduleSave(); }
   });
   on('btnGenerate',  'click', ()=>generate());
-  on('btnToday',     'click', ()=>{ document.getElementById('schedDate').value=fmtD(new Date()); });
+  on('btnToday',     'click', ()=>{ document.getElementById('schedDate').value=getThisWorkDay(); });
   on('btnRerand',    'click', ()=>generate());
   on('schedManualToggle','click',()=>{
     const p=document.getElementById('schedManualPanel');
@@ -1466,7 +1465,7 @@ const schedResults  = {}; // { 'YYYY-MM-DD': slotArray }
 
 // Returns indices of slots that should be locked (start hour reached for today)
 function getLockedIndices(dk){
-  const todayKey = fmtD(new Date());
+  const todayKey = getThisWorkDay();
   if(dk !== todayKey) return [];
   const nowHour = new Date().getHours();
   return SLOTS.map((s,i)=>i).filter(i => nowHour >= SLOTS[i].startHour);
@@ -1516,8 +1515,17 @@ function buildSched(dk, lockedSlotResults=[]){
 }
 
 // Generate today + next work day, render both panels, persist to JSONBin
+// Returns today's date if it's a weekday, otherwise the next Monday.
+function getThisWorkDay(){
+  const d = new Date();
+  const day = d.getDay();
+  if(day === 6) d.setDate(d.getDate()+2); // Saturday → Monday
+  if(day === 0) d.setDate(d.getDate()+1); // Sunday → Monday
+  return fmtD(d);
+}
+
 function generateBoth(){
-  const todayDk = fmtD(new Date());
+  const todayDk = getThisWorkDay();
   const nextDk  = getNextWorkDay();
 
   const todayRes = generate(todayDk, true);  // true = silent (no manual-lookup render)
@@ -1678,7 +1686,7 @@ function getNextWorkDay(){
 async function checkAvailabilityTrigger(changedDate){
   if(!asActive) return;
   if(!wxToken||!wxRoom) return;
-  const todayKey=fmtD(new Date());
+  const todayKey=getThisWorkDay();
   if(changedDate===todayKey){
     toast(`🔄 Availability changed — sending updated schedule…`);
     sendScheduleForDate(wxToken, wxRoom, todayKey, true);

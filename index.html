@@ -421,27 +421,54 @@ letter-spacing:0.08em;text-transform:uppercase;color:var(--late);background:rgba
 
   <!-- SCHEDULE -->
   <div class="tab-panel" id="tab-sched">
+    <!-- Today's schedule -->
+    <div class="card" id="schedTodayCard">
+      <div class="ct">📅 Today's Schedule</div>
+      <div class="sched-hd" id="schedHdToday" style="margin-top:6px"></div>
+      <div class="sg" id="schedGridToday" style="margin-top:8px"></div>
+      <div style="margin-top:10px">
+        <div class="ct" style="font-size:0.72rem;margin-bottom:4px">WebEx Message</div>
+        <div class="msgbox"><button class="cpbtn" id="cpBtnToday">Copy</button><span id="msgTxtToday"></span></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-sec" id="btnRerandToday">🔀 Re-randomise Today</button>
+      </div>
+    </div>
+
+    <!-- Next work day schedule -->
+    <div class="card" id="schedNextCard">
+      <div class="ct">📅 Next Work Day</div>
+      <div class="sched-hd" id="schedHdNext" style="margin-top:6px"></div>
+      <div class="sg" id="schedGridNext" style="margin-top:8px"></div>
+      <div style="margin-top:10px">
+        <div class="ct" style="font-size:0.72rem;margin-bottom:4px">WebEx Message</div>
+        <div class="msgbox"><button class="cpbtn" id="cpBtnNext">Copy</button><span id="msgTxtNext"></span></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-sec" id="btnRerandNext">🔀 Re-randomise Next Day</button>
+      </div>
+    </div>
+
+    <!-- Manual date lookup (collapsed by default) -->
     <div class="card">
-      <div class="ct">Generate Day Schedule</div>
-      <div style="margin-bottom:11px">
+      <div class="ct" style="cursor:pointer" id="schedManualToggle">🔍 Look Up Another Date ▾</div>
+      <div id="schedManualPanel" style="display:none;margin-top:10px">
         <div class="fl">Date</div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
           <input type="date" id="schedDate" style="flex:1">
           <button class="btn btn-sec" id="btnToday" style="white-space:nowrap;padding:8px 14px">📅 Today</button>
         </div>
-      </div>
-      <button class="btn btn-big" id="btnGenerate">⚡ Generate Schedule</button>
-      <p class="errtxt" id="schedErr"></p>
-    </div>
-    <div id="schedOut" style="display:none">
-      <div class="sched-hd" id="schedHd"></div>
-      <div class="card" style="padding:13px"><div class="sg" id="schedGrid"></div></div>
-      <div class="card" style="padding:13px">
-        <div class="ct">WebEx Message</div>
-        <div class="msgbox"><button class="cpbtn" id="cpBtn">Copy</button><span id="msgTxt"></span></div>
-      </div>
-      <div style="max-width:780px;margin:0 auto">
-        <button class="btn btn-sec btn-big" id="btnRerand">🔀 Re-randomise</button>
+        <button class="btn btn-big" id="btnGenerate">⚡ Generate Schedule</button>
+        <p class="errtxt" id="schedErr"></p>
+        <div id="schedOut" style="display:none;margin-top:10px">
+          <div class="sched-hd" id="schedHd"></div>
+          <div class="sg" id="schedGrid" style="margin-top:8px"></div>
+          <div style="margin-top:10px">
+            <div class="ct" style="font-size:0.72rem;margin-bottom:4px">WebEx Message</div>
+            <div class="msgbox"><button class="cpbtn" id="cpBtn">Copy</button><span id="msgTxt"></span></div>
+          </div>
+          <button class="btn btn-sec" id="btnRerand" style="margin-top:10px">🔀 Re-randomise</button>
+        </div>
       </div>
     </div>
   </div>
@@ -707,8 +734,8 @@ async function showApp(){
   // Restore WebEx credentials from memory (loaded from JSONBin on unlock)
   if(wxToken)  document.getElementById('wxTok').value=wxToken;
   if(wxRoom)   document.getElementById('wxRoom').value=wxRoom;
-  // Auto-generate today's schedule immediately on load
-  generate();
+  // Auto-generate today and next work day on load, store both results
+  generateBoth();
   // Auto-activate auto-send if credentials are already in memory
   if(wxToken && wxRoom){ activateAS(wxToken, wxRoom); }
 }
@@ -889,13 +916,22 @@ async function doSave(){
   const encryptedPin   = currentPin ? await encryptPin(currentPin) : null;
   const encryptedTok   = wxToken    ? await encryptWx(wxToken)     : null;
   const encryptedRoom  = wxRoom     ? await encryptWx(wxRoom)      : null;
-  const salt           = lsRaw(LS_SALT); // admin's salt — same for everyone
+  const salt           = lsRaw(LS_SALT);
+
+  // Persist generated schedules so send-schedule.js can send without regenerating
+  const todayDk   = fmtD(new Date());
+  const nextDk    = getNextWorkDay();
+  const schedData = {};
+  if(schedResults[todayDk]) schedData.schedToday   = { dk: todayDk, slots: schedResults[todayDk] };
+  if(schedResults[nextDk])  schedData.schedNextDay  = { dk: nextDk,  slots: schedResults[nextDk]  };
+
   const p = {
     team, avail,
     ...(salt          ? {salt}                    : {}),
     ...(encryptedPin  ? {pin:    encryptedPin}    : {}),
     ...(encryptedTok  ? {wxTok:  encryptedTok}   : {}),
     ...(encryptedRoom ? {wxRoom: encryptedRoom}   : {}),
+    ...schedData,
   };
   await LS.set(LSD,JSON.stringify({team,avail})); // local cache (credentials excluded)
   if(localOnly||!jbKey||!jbBin){setSyncState('local');return;}
@@ -979,9 +1015,30 @@ function wireEvents(){
   on('btnWkNext',    'click', ()=>chWk(1));
   on('avBody',       'change', e=>{ const s=e.target.closest('select[data-name]'); if(s) setAv(s.dataset.name,s.dataset.date,s); });
   // Schedule
+  on('btnRerandToday','click', ()=>{
+    const dk=fmtD(new Date());
+    // Clear stored result so generate() re-randomises (locking past slots)
+    if(lastSchedDk===dk) lastSchedResult=schedResults[dk]||null;
+    const res=generate(dk, true);
+    if(res){ renderSchedPanel(res.result,res.dk,'Today','schedHdToday','schedGridToday','msgTxtToday','cpBtnToday',true); scheduleSave(); }
+  });
+  on('btnRerandNext', 'click', ()=>{
+    const dk=getNextWorkDay();
+    // Next day re-randomise always regenerates freely (no past slots)
+    lastSchedResult=null; lastSchedDk=null;
+    const res=generate(dk, true);
+    if(res){ renderSchedPanel(res.result,res.dk,'Next','schedHdNext','schedGridNext','msgTxtNext','cpBtnNext',false); scheduleSave(); }
+  });
   on('btnGenerate',  'click', ()=>generate());
   on('btnToday',     'click', ()=>{ document.getElementById('schedDate').value=fmtD(new Date()); });
   on('btnRerand',    'click', ()=>generate());
+  on('schedManualToggle','click',()=>{
+    const p=document.getElementById('schedManualPanel');
+    const t=document.getElementById('schedManualToggle');
+    const open=p.style.display!=='none';
+    p.style.display=open?'none':'block';
+    t.textContent=open?'🔍 Look Up Another Date ▾':'🔍 Look Up Another Date ▲';
+  });
   on('cpBtn',        'click', copyMsg);
   // Auto-send
   on('btnBulkApply', 'click', applyBulk);
@@ -1403,6 +1460,9 @@ function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Mat
 // Stores the last fully rendered schedule result so re-randomise can lock past slots
 let lastSchedResult = null;
 let lastSchedDk     = null;
+// Persisted schedule results keyed by date — today and next work day are stored
+// in JSONBin so send-schedule.js can post them without re-generating.
+const schedResults  = {}; // { 'YYYY-MM-DD': slotArray }
 
 // Returns indices of slots that should be locked (start hour reached for today)
 function getLockedIndices(dk){
@@ -1455,29 +1515,75 @@ function buildSched(dk, lockedSlotResults=[]){
   });
 }
 
-function generate(td){
+// Generate today + next work day, render both panels, persist to JSONBin
+function generateBoth(){
+  const todayDk = fmtD(new Date());
+  const nextDk  = getNextWorkDay();
+
+  const todayRes = generate(todayDk, true);  // true = silent (no manual-lookup render)
+  const nextRes  = generate(nextDk,  true);
+
+  if(todayRes) renderSchedPanel(todayRes.result, todayRes.dk, 'Today', 'schedHdToday','schedGridToday','msgTxtToday','cpBtnToday', true);
+  if(nextRes)  renderSchedPanel(nextRes.result,  nextRes.dk,  'Next',  'schedHdNext', 'schedGridNext', 'msgTxtNext', 'cpBtnNext',  false);
+
+  // Persist both schedules to JSONBin so send-schedule.js can use them
+  scheduleSave();
+}
+
+function renderSchedPanel(result, dk, label, hdId, gridId, msgId, cpId, isToday){
+  const obj = new Date(dk+'T00:00:00');
+  const hd  = obj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  document.getElementById(hdId).textContent = hd;
+  document.getElementById(gridId).innerHTML = result.map((s,i)=>{
+    const badges = s.assigned.map(n=>`<span class="badge ${isLate(n,dk)?'bl':'bn'}">${n}${isLate(n,dk)?' 🕐':''}</span>`).join('');
+    let tag='';
+    if(s.past)                    tag=`<span class="past-tag">Past</span>`;
+    else if(s.lateOnly&&s.hasLate) tag=`<span class="ltag">Late Slot</span>`;
+    else if(s.lateOnly&&s.noLate)  tag=`<span class="ltag" style="color:var(--warn);border-color:rgba(255,107,53,0.3);background:rgba(255,107,53,0.07)">No late assigned</span>`;
+    const pastClass = s.past ? ' past' : '';
+    return`<div class="slotrow${pastClass}" style="animation-delay:${i*.04}s"><div class="stime">${s.time}</div><div class="speople">${badges}${tag}</div></div>`;
+  }).join('');
+  const msg = buildMsg(result, hd, dk);
+  document.getElementById(msgId).textContent = msg;
+  const cpBtn = document.getElementById(cpId);
+  cpBtn.textContent='Copy';
+  cpBtn.classList.remove('ok');
+  cpBtn.onclick=()=>{
+    navigator.clipboard.writeText(msg).then(()=>{
+      cpBtn.textContent='Copied!'; cpBtn.classList.add('ok');
+      setTimeout(()=>{cpBtn.textContent='Copy';cpBtn.classList.remove('ok');},2000);
+    });
+  };
+}
+
+function generate(td, silent=false){
   const dk=td||document.getElementById('schedDate')?.value;
   const err=document.getElementById('schedErr');
-  if(err) err.style.display='none';
-  if(!dk){if(err){err.textContent='Select a date.';err.style.display='block';}return null;}
+  if(!silent && err) err.style.display='none';
+  if(!dk){if(!silent&&err){err.textContent='Select a date.';err.style.display='block';}return null;}
 
-  // Build locked slot map: for re-randomise on today, preserve any already-generated past slots
+  // Build locked slot map: for re-randomise on today, preserve past slots
   const lockedIndices = getLockedIndices(dk);
   const lockedSlotResults = [];
   if(lockedIndices.length && lastSchedResult && lastSchedDk===dk){
-    // We have a previous result for this date — lock the past slots from it
     lockedIndices.forEach(i=>{ lockedSlotResults[i] = lastSchedResult[i]; });
   }
-  // If no previous result exists (first generate), all slots randomise freely
 
   const result=buildSched(dk, lockedSlotResults);
-  if(!result){if(err){err.textContent='Not enough available members — need at least 2 people set to Available (not Late Shift, PTO, or Excluded).';err.style.display='block';}return null;}
+  if(!result){
+    if(!silent&&err){err.textContent='Not enough available members — need at least 2 people set to Available (not Late Shift, PTO, or Excluded).';err.style.display='block';}
+    return null;
+  }
 
-  // Store for future re-randomise calls
-  lastSchedResult = result;
-  lastSchedDk     = dk;
+  // Store for re-randomise and for JSONBin persistence
+  lastSchedResult    = result;
+  lastSchedDk        = dk;
+  schedResults[dk]   = result; // keyed by date for doSave
 
-  if(!td) renderSched(result,dk);
+  // Only render the manual lookup panel if not called silently
+  if(!silent){
+    renderSched(result, dk);
+  }
   return{result,dk};
 }
 
@@ -1584,11 +1690,17 @@ async function sendTomorrow(tok,room){
 }
 
 async function sendScheduleForDate(tok,room,dk,isUpdate){
-  const gen=generate(dk);
-  if(!gen){toast("⚠ Can't generate schedule.");return;}
+  // Use the stored schedule result if available — never regenerate on send
+  let result = schedResults[dk];
+  if(!result){
+    // Fallback: generate if no stored result (e.g. first load before generateBoth ran)
+    const gen=generate(dk, true);
+    if(!gen){toast("⚠ Can't generate schedule.");return;}
+    result = gen.result;
+  }
   const obj=new Date(dk+'T00:00:00');
   const hd=obj.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const msg=isUpdate?buildUpdatedMsg(gen.result,hd,dk):buildMsg(gen.result,hd,dk);
+  const msg=isUpdate?buildUpdatedMsg(result,hd,dk):buildMsg(result,hd,dk);
   try{
     const r=await fetch('https://webexapis.com/v1/messages',{
       method:'POST',headers:{'Authorization':`Bearer ${tok}`,'Content-Type':'application/json'},

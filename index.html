@@ -1673,10 +1673,12 @@ function stopAS(){
   document.getElementById('asStatus').innerHTML='Auto-send is <strong>inactive</strong>.';
 }
 
-// Returns the next work day date string (Mon–Fri only).
-// Friday → Monday, Saturday → Monday, Sunday → Monday.
+// Returns the next work day after the current work day (Mon–Fri only).
+// Starts from getThisWorkDay() so weekends never cause a duplicate:
+//   Saturday/Sunday → Monday is "today", Tuesday is "next"
+//   Friday → Monday is "next"
 function getNextWorkDay(){
-  const d=new Date();
+  const d=new Date(getThisWorkDay()+'T00:00:00');
   do{ d.setDate(d.getDate()+1); }while(d.getDay()===0||d.getDay()===6);
   return fmtD(d);
 }
